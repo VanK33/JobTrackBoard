@@ -1,0 +1,33 @@
+{
+  "name": "modular-job-tracker",
+  "version": "1.0.0",
+  "description": "A modular job-tracking platform with plug-and-play modules",
+  "private": true,
+  "workspaces": [
+    "platform/*",
+    "modules/*",
+    "shared/*",
+    "tools/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:platform\" \"npm run dev:modules\"",
+    "dev:platform": "npm run dev --workspace=@platform/core",
+    "dev:modules": "npm run dev --workspace=@modules/job-tracker-basic",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "concurrently": "^8.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "name": "@modules/job-tracker-basic",
+  "version": "1.0.0",
+  "description": "Basic job application tracking module - demonstrates core modular functionality",
+  "main": "dist/backend/index.js",
+  "types": "dist/backend/index.d.ts",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "tsx watch src/backend/index.ts",
+    "dev:frontend": "echo 'Frontend development server would start here'",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "tsc -p tsconfig.backend.json",
+    "build:frontend": "echo 'Frontend build would happen here'",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0",
+    "concurrently": "^8.0.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0"
+  },
+  "moduleManifest": {
+    "name": "job-tracker-basic",
+    "version": "1.0.0",
+    "displayName": "Basic Job Tracker",
+    "description": "Core job application tracking functionality with CRUD operations, status management, and basic search",
+    "type": "core-module",
+    "platform": {
+      "minVersion": "1.0.0",
+      "maxVersion": "2.x.x"
+    },
+    "dependencies": {
+      "modules": [],
+      "platform": ["data-service", "event-bus", "auth"]
+    },
+    "permissions": [
+      "data:jobs:read",
+      "data:jobs:write",
+      "data:companies:read",
+      "data:companies:write",
+      "events:job-status:publish",
+      "ui:main-nav:register"
+    ],
+    "exports": {
+      "backend": "./dist/backend/index.js",
+      "frontend": "./dist/frontend/index.js"
+    },
+    "ui": {
+      "routes": [
+        { "path": "/jobs", "component": "JobList" },
+        { "path": "/jobs/new", "component": "JobForm" },
+        { "path": "/jobs/:id", "component": "JobDetail" },
+        { "path": "/jobs/:id/edit", "component": "JobForm" }
+      ],
+      "navigation": [
+        { "label": "Jobs", "path": "/jobs", "icon": "briefcase" }
+      ],
+      "widgets": [
+        { "name": "JobStats", "slot": "dashboard" },
+        { "name": "RecentApplications", "slot": "sidebar" }
+      ]
+    },
+    "events": {
+      "publishes": [
+        "job.created",
+        "job.updated", 
+        "job.deleted",
+        "job.status.changed",
+        "application.submitted"
+      ],
+      "subscribes": [
+        "user.preferences.changed"
+      ]
+    }
+  }
+}

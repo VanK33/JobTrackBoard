@@ -1,0 +1,42 @@
+export interface ModuleInfo {
+  id: string
+  name: string
+  displayName: string
+  description: string
+  version: string
+  type: 'core-module' | 'enhancement-module' | 'integration-module'
+  category: 'tracking' | 'analysis' | 'automation' | 'integration'
+  icon?: string
+  screenshots?: string[]
+  features: string[]
+  dependencies?: string[]
+  permissions?: string[]
+  author?: string
+  rating?: number
+  downloadCount?: number
+  lastUpdated?: string
+}
+
+export interface InstalledModule {
+  id: string
+  name: string
+  displayName: string
+  version: string
+  enabled: boolean
+  status: 'active' | 'inactive' | 'error'
+  position?: {
+    x: number
+    y: number
+  }
+}
+
+export interface ModuleCard {
+  module: ModuleInfo
+  isInstalled: boolean
+  onInstall: (moduleId: string) => void
+  onUninstall: (moduleId: string) => void
+}
+
+export interface WorkspaceModule extends InstalledModule {
+  component?: React.ComponentType<any>
+}

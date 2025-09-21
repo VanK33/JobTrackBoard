@@ -1,0 +1,54 @@
+{
+  "name": "job-tracker-basic",
+  "version": "1.0.0",
+  "displayName": "Basic Job Tracker",
+  "description": "Core job application tracking functionality with CRUD operations, status management, and basic search",
+  "type": "core-module",
+  "platform": {
+    "minVersion": "1.0.0",
+    "maxVersion": "2.x.x"
+  },
+  "dependencies": {
+    "modules": [],
+    "platform": ["data-service", "event-bus", "auth"]
+  },
+  "permissions": [
+    "data:jobs:read",
+    "data:jobs:write",
+    "data:companies:read",
+    "data:companies:write",
+    "events:job-status:publish",
+    "ui:main-nav:register"
+  ],
+  "exports": {
+    "backend": "./dist/backend/index.js",
+    "frontend": "./dist/frontend/index.js"
+  },
+  "ui": {
+    "routes": [
+      { "path": "/jobs", "component": "JobList" },
+      { "path": "/jobs/new", "component": "JobForm" },
+      { "path": "/jobs/:id", "component": "JobDetail" },
+      { "path": "/jobs/:id/edit", "component": "JobForm" }
+    ],
+    "navigation": [
+      { "label": "Jobs", "path": "/jobs", "icon": "briefcase" }
+    ],
+    "widgets": [
+      { "name": "JobStats", "slot": "dashboard" },
+      { "name": "RecentApplications", "slot": "sidebar" }
+    ]
+  },
+  "events": {
+    "publishes": [
+      "job.created",
+      "job.updated", 
+      "job.deleted",
+      "job.status.changed",
+      "application.submitted"
+    ],
+    "subscribes": [
+      "user.preferences.changed"
+    ]
+  }
+}

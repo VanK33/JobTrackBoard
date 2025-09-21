@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Data Migration</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 8px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .success {
+            background: #10b981;
+        }
+        .danger {
+            background: #ef4444;
+        }
+        pre {
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .status {
+            margin: 16px 0;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid #3b82f6;
+            background: #eff6ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📥 Data Migration Test Tool</h1>
+        <p>This tool helps you test the data migration functionality by creating sample localStorage data and testing the migration process.</p>
+
+        <div class="status" id="status">
+            Ready to test migration
+        </div>
+
+        <h3>Step 1: Create Sample Data</h3>
+        <button onclick="createSampleData()">Create Sample localStorage Data</button>
+        <button onclick="showCurrentData()">Show Current localStorage Data</button>
+
+        <h3>Step 2: Test Migration API</h3>
+        <button onclick="testMigration()">Test Migration to Database</button>
+        <button onclick="viewDatabaseData()">View Database Data</button>
+
+        <h3>Step 3: Cleanup</h3>
+        <button onclick="clearLocalStorage()" class="danger">Clear localStorage</button>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const apiBase = 'http://localhost:3000';
+
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.style.borderLeftColor = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6';
+            status.style.backgroundColor = type === 'success' ? '#ecfdf5' : type === 'error' ? '#fef2f2' : '#eff6ff';
+        }
+
+        function createSampleData() {
+            const sampleJobs = [
+                {
+                    _id: '1',
+                    title: 'Senior Frontend Developer',
+                    company: 'TechStartup Inc',
+                    location: 'San Francisco, CA',
+                    status: 'applied',
+                    url: 'https://example.com/job1',
+                    notes: 'Great team, interesting product',
+                    description: 'Build amazing user interfaces with React',
+                    requirements: ['React', 'TypeScript', '3+ years experience'],
+                    appliedAt: '2024-01-15T10:00:00Z',
+                    createdAt: '2024-01-10T10:00:00Z'
+                },
+                {
+                    _id: '2',
+                    title: 'Full Stack Engineer',
+                    company: 'InnovateCorp',
+                    location: 'Remote',
+                    status: 'interviewing',
+                    url: 'https://example.com/job2',
+                    notes: 'Second interview next week',
+                    description: 'Work on both frontend and backend systems',
+                    requirements: ['Node.js', 'React', 'PostgreSQL'],
+                    appliedAt: '2024-01-12T14:30:00Z',
+                    createdAt: '2024-01-08T09:15:00Z'
+                },
+                {
+                    _id: '3',
+                    title: 'Product Manager',
+                    company: 'GrowthLabs',
+                    location: 'New York, NY',
+                    status: 'interested',
+                    url: 'https://example.com/job3',
+                    notes: 'Need to research the company more',
+                    description: 'Lead product strategy and development',
+                    requirements: ['Product management experience', 'Data analysis', 'Leadership'],
+                    createdAt: '2024-01-20T16:45:00Z'
+                }
+            ];
+
+            // Store in different localStorage keys to test various scenarios
+            localStorage.setItem('jobs', JSON.stringify(sampleJobs));
+            localStorage.setItem('jobApplications', JSON.stringify([sampleJobs[0]]));
+            localStorage.setItem('jobTracker', JSON.stringify([sampleJobs[1]]));
+
+            updateStatus('✅ Sample data created in localStorage', 'success');
+            showCurrentData();
+        }
+
+        function showCurrentData() {
+            const output = document.getElementById('output');
+            const jobs = localStorage.getItem('jobs');
+            const jobApplications = localStorage.getItem('jobApplications');
+            const jobTracker = localStorage.getItem('jobTracker');
+
+            output.innerHTML = `
+                <h4>Current localStorage Data:</h4>
+                <h5>jobs:</h5>
+                <pre>${jobs ? JSON.stringify(JSON.parse(jobs), null, 2) : 'No data'}</pre>
+                <h5>jobApplications:</h5>
+                <pre>${jobApplications ? JSON.stringify(JSON.parse(jobApplications), null, 2) : 'No data'}</pre>
+                <h5>jobTracker:</h5>
+                <pre>${jobTracker ? JSON.stringify(JSON.parse(jobTracker), null, 2) : 'No data'}</pre>
+            `;
+        }
+
+        async function testMigration() {
+            try {
+                updateStatus('🔄 Testing migration...', 'info');
+
+                // Simulate the migration service
+                const jobs = [];
+
+                // Get data from different localStorage keys
+                const sources = ['jobs', 'jobApplications', 'jobTracker'];
+                sources.forEach(key => {
+                    const data = localStorage.getItem(key);
+                    if (data) {
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (Array.isArray(parsed)) {
+                                jobs.push(...parsed);
+                            }
+                        } catch (e) {
+                            console.warn(`Failed to parse ${key}:`, e);
+                        }
+                    }
+                });
+
+                // Remove duplicates
+                const unique = jobs.filter((job, index, self) =>
+                    index === self.findIndex(j => j.title === job.title && j.company === job.company)
+                );
+
+                if (unique.length === 0) {
+                    updateStatus('⚠️ No data found in localStorage to migrate', 'error');
+                    return;
+                }
+
+                // Send to migration endpoint
+                const response = await fetch(`${apiBase}/api/data/migrate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ jobs: unique })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    updateStatus(`✅ Migration successful: ${result.imported} jobs imported`, 'success');
+
+                    document.getElementById('output').innerHTML = `
+                        <h4>Migration Result:</h4>
+                        <pre>${JSON.stringify(result, null, 2)}</pre>
+                    `;
+                } else {
+                    updateStatus(`❌ Migration failed: ${result.error}`, 'error');
+                }
+
+            } catch (error) {
+                updateStatus(`❌ Migration error: ${error.message}`, 'error');
+                console.error('Migration error:', error);
+            }
+        }
+
+        async function viewDatabaseData() {
+            try {
+                const response = await fetch(`${apiBase}/api/jobs`);
+                const jobs = await response.json();
+
+                document.getElementById('output').innerHTML = `
+                    <h4>Current Database Data (${jobs.length} jobs):</h4>
+                    <pre>${JSON.stringify(jobs, null, 2)}</pre>
+                `;
+
+                updateStatus(`📊 Database contains ${jobs.length} jobs`, 'success');
+            } catch (error) {
+                updateStatus(`❌ Failed to fetch database data: ${error.message}`, 'error');
+            }
+        }
+
+        function clearLocalStorage() {
+            const keys = ['jobs', 'jobApplications', 'jobTracker'];
+            keys.forEach(key => localStorage.removeItem(key));
+
+            updateStatus('🗑️ localStorage cleared', 'success');
+            document.getElementById('output').innerHTML = '';
+        }
+
+        // Initialize
+        showCurrentData();
+    </script>
+</body>
+</html>

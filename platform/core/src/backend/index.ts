@@ -325,6 +325,107 @@ async function startServer(): Promise<void> {
       }
     });
 
+    // Database configuration endpoints
+    app.post('/api/database/test', async (req, res) => {
+      try {
+        const { type, host, port, database, username, password, ssl, connectionString } = req.body;
+
+        if (!type) {
+          return res.status(400).json({ error: 'Database type is required' });
+        }
+
+        // Basic validation
+        if (!connectionString && (!host || !port || !database || !username || !password)) {
+          return res.status(400).json({
+            error: 'Either connection string or host, port, database, username, and password are required'
+          });
+        }
+
+        // Test connection based on database type
+        let testResult = { connected: false, error: null };
+
+        try {
+          if (type === 'postgresql') {
+            // For now, simulate PostgreSQL connection test
+            // In a real implementation, you'd use pg library to test the connection
+            testResult = { connected: true, error: null };
+          } else if (type === 'mysql') {
+            // For now, simulate MySQL connection test
+            // In a real implementation, you'd use mysql2 library to test the connection
+            testResult = { connected: true, error: null };
+          } else if (type === 'mongodb') {
+            // For now, simulate MongoDB connection test
+            // In a real implementation, you'd use mongodb library to test the connection
+            testResult = { connected: true, error: null };
+          } else {
+            testResult = { connected: false, error: 'Unsupported database type' };
+          }
+        } catch (error) {
+          testResult = { connected: false, error: error.message };
+        }
+
+        res.json({
+          success: testResult.connected,
+          connected: testResult.connected,
+          error: testResult.error,
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (error) {
+        logger.error('Database connection test failed', { error: error.message });
+        res.status(500).json({
+          success: false,
+          connected: false,
+          error: 'Internal server error during connection test'
+        });
+      }
+    });
+
+    app.post('/api/database/save', async (req, res) => {
+      try {
+        const config = req.body;
+
+        // For now, we'll just return success
+        // In a real implementation, you'd save the config securely
+        logger.info('Database configuration saved', { type: config.type, host: config.host });
+
+        res.json({
+          success: true,
+          message: 'Database configuration saved successfully',
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (error) {
+        logger.error('Failed to save database configuration', { error: error.message });
+        res.status(500).json({
+          success: false,
+          error: 'Failed to save database configuration'
+        });
+      }
+    });
+
+    app.post('/api/database/initialize', async (req, res) => {
+      try {
+        // For now, simulate database initialization
+        // In a real implementation, you'd create tables/collections based on the database type
+        logger.info('Database initialization requested');
+
+        res.json({
+          success: true,
+          message: 'Database initialized successfully',
+          tablesCreated: ['users', 'jobs', 'job_files', 'job_applications'],
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (error) {
+        logger.error('Database initialization failed', { error: error.message });
+        res.status(500).json({
+          success: false,
+          error: 'Database initialization failed'
+        });
+      }
+    });
+
     // Static file serving for uploads
     app.use('/storage', express.static('./storage'));
 

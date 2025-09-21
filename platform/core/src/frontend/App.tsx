@@ -3,11 +3,12 @@ import ModuleStore from './components/ModuleStore'
 import Workspace from './components/Workspace'
 import MinimalistWorkspace from './components/MinimalistWorkspace'
 import JobDashboard from './components/JobDashboard'
+import DatabaseSettings from './components/DatabaseSettings'
 import Header from './components/Header'
 import { ModuleInfo, InstalledModule } from './types'
 
 function App() {
-  const [view, setView] = useState<'store' | 'workspace' | 'minimalist' | 'dashboard'>('dashboard')
+  const [view, setView] = useState<'store' | 'workspace' | 'minimalist' | 'dashboard' | 'settings'>('dashboard')
   const [availableModules, setAvailableModules] = useState<ModuleInfo[]>([])
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,7 +73,12 @@ function App() {
 
   // Show the new dashboard design
   if (view === 'dashboard') {
-    return <JobDashboard />
+    return <JobDashboard onNavigateToSettings={() => setView('settings')} />
+  }
+
+  // Database settings
+  if (view === 'settings') {
+    return <DatabaseSettings onNavigateBack={() => setView('dashboard')} />
   }
 
   // For now, directly show the minimalist design

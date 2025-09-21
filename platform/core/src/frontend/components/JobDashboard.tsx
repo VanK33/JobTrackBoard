@@ -70,7 +70,11 @@ interface PreviewState {
   triggerElement: HTMLElement | null
 }
 
-const JobDashboard: React.FC = () => {
+interface JobDashboardProps {
+  onNavigateToSettings?: () => void
+}
+
+const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => {
   const [jobs, setJobs] = useState<Job[]>([])
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
@@ -3760,14 +3764,53 @@ const JobDashboard: React.FC = () => {
         flexDirection: 'column',
         overflowX: 'hidden'
       }}>
-        <h3 style={{
-          margin: '0 0 20px 0',
-          fontSize: '16px',
-          fontWeight: '600',
-          color: '#000000'
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '20px'
         }}>
-          Application Statistics
-        </h3>
+          <h3 style={{
+            margin: 0,
+            fontSize: '16px',
+            fontWeight: '600',
+            color: '#000000'
+          }}>
+            Application Statistics
+          </h3>
+          {onNavigateToSettings && (
+            <button
+              onClick={onNavigateToSettings}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px',
+                color: '#6b7280',
+                transition: 'color 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#374151'
+                e.currentTarget.style.backgroundColor = '#f3f4f6'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#6b7280'
+                e.currentTarget.style.backgroundColor = 'transparent'
+              }}
+              title="Database Settings"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m15.5-6.5L19 6.5m-7 7L5.5 19.5M1 12.5L6.5 7m7 7l5.5 5.5"/>
+              </svg>
+            </button>
+          )}
+        </div>
 
         {/* Bar Chart - 5 Categories Only */}
         <div style={{ marginBottom: '30px' }}>

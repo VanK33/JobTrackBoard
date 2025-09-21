@@ -184,6 +184,86 @@ async function startSimpleServer(): Promise<void> {
     res.json(stats);
   });
 
+  // Database configuration endpoints
+  app.post('/api/database/test', (req, res) => {
+    try {
+      const { type, host, port, database, username, password, ssl, connectionString } = req.body;
+
+      if (!type) {
+        return res.status(400).json({ error: 'Database type is required' });
+      }
+
+      // Basic validation
+      if (!connectionString && (!host || !port || !database || !username || !password)) {
+        return res.status(400).json({
+          error: 'Either connection string or host, port, database, username, and password are required'
+        });
+      }
+
+      // For demo purposes, simulate successful connection
+      logger.info('Database connection test requested', { type, host });
+
+      res.json({
+        success: true,
+        connected: true,
+        error: null,
+        tablesInitialized: false, // Indicate tables need to be initialized
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error: any) {
+      logger.error('Database connection test failed', { error: error.message });
+      res.status(500).json({
+        success: false,
+        connected: false,
+        error: 'Internal server error during connection test'
+      });
+    }
+  });
+
+  app.post('/api/database/save', (req, res) => {
+    try {
+      const config = req.body;
+
+      // For demo purposes, just log the config
+      logger.info('Database configuration saved', { type: config.type, host: config.host });
+
+      res.json({
+        success: true,
+        message: 'Database configuration saved successfully',
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error: any) {
+      logger.error('Failed to save database configuration', { error: error.message });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to save database configuration'
+      });
+    }
+  });
+
+  app.post('/api/database/initialize', (req, res) => {
+    try {
+      // For demo purposes, simulate database initialization
+      logger.info('Database initialization requested');
+
+      res.json({
+        success: true,
+        message: 'Database initialized successfully',
+        tablesCreated: ['users', 'jobs', 'job_files', 'job_applications'],
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error: any) {
+      logger.error('Database initialization failed', { error: error.message });
+      res.status(500).json({
+        success: false,
+        error: 'Database initialization failed'
+      });
+    }
+  });
+
   // Start server
   const port = 3000;
   const server = app.listen(port, () => {

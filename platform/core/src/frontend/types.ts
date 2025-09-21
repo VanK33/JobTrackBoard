@@ -40,3 +40,35 @@ export interface ModuleCard {
 export interface WorkspaceModule extends InstalledModule {
   component?: React.ComponentType<any>
 }
+
+// Database Configuration Types
+export interface DatabaseConfig {
+  type: 'postgresql' | 'mysql' | 'mongodb'
+  host: string
+  port: number
+  database: string
+  username: string
+  password: string
+  ssl?: boolean
+  connectionString?: string
+}
+
+export interface DatabaseProvider {
+  id: string
+  name: string
+  description: string
+  freeLimit: string
+  setupComplexity: 'Easy' | 'Medium' | 'Advanced'
+  recommendedFor: string[]
+  logo: string
+  signupUrl: string
+  docsUrl: string
+  type: 'postgresql' | 'mysql' | 'mongodb'
+}
+
+export interface DatabaseStatus {
+  connected: boolean
+  lastChecked?: string
+  error?: string
+  tablesInitialized?: boolean
+}

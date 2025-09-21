@@ -64,6 +64,12 @@ interface Module {
   isInstalled: boolean
 }
 
+interface PreviewState {
+  file: JobFile | null
+  position: { x: number; y: number } | null
+  triggerElement: HTMLElement | null
+}
+
 const JobDashboard: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>([])
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
@@ -90,8 +96,20 @@ const JobDashboard: React.FC = () => {
   })
   const [editingFileName, setEditingFileName] = useState<string | null>(null)
   const [editingFileNameValue, setEditingFileNameValue] = useState<string>('')
-  const [previewFile, setPreviewFile] = useState<JobFile | null>(null)
   const [uploadProgressMap, setUploadProgressMap] = useState<{[fileId: string]: number}>({})
+
+  // Preview system state
+  const [previewState, setPreviewState] = useState<PreviewState>({
+    file: null,
+    position: null,
+    triggerElement: null
+  })
+  const [thumbnailCache, setThumbnailCache] = useState<{[fileId: string]: string}>({})
+  const [loadingThumbnails, setLoadingThumbnails] = useState<Set<string>>(new Set())
+  const [isMobileDevice, setIsMobileDevice] = useState(false)
+
+  const previewTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+  const hideTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
   const detailTitleRef = React.useRef<HTMLHeadingElement>(null)
   const jobRefs = React.useRef<{[key: string]: HTMLDivElement | null}>({})
@@ -145,7 +163,7 @@ const JobDashboard: React.FC = () => {
           type: 'resume',
           mimeType: 'application/pdf',
           size: 245760,
-          url: '/files/resume.pdf',
+          url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
           uploadedAt: '2023-10-25'
         },
         {
@@ -154,8 +172,26 @@ const JobDashboard: React.FC = () => {
           type: 'cover-letter',
           mimeType: 'application/pdf',
           size: 156789,
-          url: '/files/cover_letter.pdf',
+          url: 'https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf',
           uploadedAt: '2023-10-25'
+        },
+        {
+          id: '1c',
+          name: 'portfolio_screenshot.png',
+          type: 'portfolio',
+          mimeType: 'image/png',
+          size: 256000,
+          url: 'https://picsum.photos/800/600?random=1',
+          uploadedAt: '2023-10-25'
+        },
+        {
+          id: '1d',
+          name: 'design_mockup.jpg',
+          type: 'portfolio',
+          mimeType: 'image/jpeg',
+          size: 312000,
+          url: 'https://picsum.photos/1200/800?random=2',
+          uploadedAt: '2023-10-26'
         }
       ],
       notes: 'Follow up call Nov 1, Follow with recruiter Nov 8',
@@ -1037,20 +1073,40 @@ const JobDashboard: React.FC = () => {
       setSelectedJob(null)
       setLoading(false)
     }, 500)
+
+    // Detect mobile device
+    const checkMobileDevice = () => {
+      setIsMobileDevice('ontouchstart' in window || navigator.maxTouchPoints > 0)
+    }
+    checkMobileDevice()
+    window.addEventListener('resize', checkMobileDevice)
+
+    return () => {
+      window.removeEventListener('resize', checkMobileDevice)
+    }
   }, [])
 
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selectedJob) {
-        setSelectedJob(null)
-        setDetailViewExpanded(false)
+      if (e.key === 'Escape') {
+        // Close preview first if open
+        if (previewState.file) {
+          setPreviewState({
+            file: null,
+            position: null,
+            triggerElement: null
+          })
+        } else if (selectedJob) {
+          setSelectedJob(null)
+          setDetailViewExpanded(false)
+        }
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [selectedJob])
+  }, [selectedJob, previewState.file])
 
   // Handle job selection toggle
   const handleJobClick = (job: Job) => {
@@ -1155,6 +1211,375 @@ const JobDashboard: React.FC = () => {
       case 'other': return 'Other'
       default: return 'Unknown'
     }
+  }
+
+  // Preview utility functions
+  const isPreviewableFile = (file: JobFile) => {
+    return file.mimeType.includes('image') || file.mimeType.includes('pdf')
+  }
+
+  const generateThumbnailUrl = (file: JobFile) => {
+    if (file.mimeType.includes('image')) {
+      // For images, we can use the original URL as thumbnail
+      return file.url
+    } else if (file.mimeType.includes('pdf')) {
+      // For PDFs, we can use different approaches:
+      // 1. Backend thumbnail service (preferred for production)
+      // 2. PDF.js iframe preview (works for accessible PDFs)
+      // 3. Third-party preview service
+
+      // For demo purposes, we'll use a PDF iframe preview if available
+      // In production, replace with your backend thumbnail API
+      return file.url
+    }
+    return null
+  }
+
+  const getPositionForPreview = (triggerElement: HTMLElement) => {
+    const rect = triggerElement.getBoundingClientRect()
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const previewWidth = 320
+    const previewHeight = 240
+
+    let x = rect.right + 16
+    let y = rect.top
+
+    // If preview would go off right edge, show on left
+    if (x + previewWidth > viewportWidth) {
+      x = rect.left - previewWidth - 16
+    }
+
+    // If preview would go off bottom edge, move up
+    if (y + previewHeight > viewportHeight) {
+      y = Math.max(16, viewportHeight - previewHeight - 16)
+    }
+
+    // If preview would go off top edge, move down
+    if (y < 16) {
+      y = 16
+    }
+
+    return { x, y }
+  }
+
+  const handleFileHover = (file: JobFile, triggerElement: HTMLElement) => {
+    if (isMobileDevice) return
+
+    // Clear any existing timeouts
+    if (previewTimeoutRef.current) {
+      clearTimeout(previewTimeoutRef.current)
+    }
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current)
+    }
+
+    // Set preview after delay to prevent flickering
+    previewTimeoutRef.current = setTimeout(() => {
+      if (isPreviewableFile(file)) {
+        const position = getPositionForPreview(triggerElement)
+        setPreviewState({
+          file,
+          position,
+          triggerElement
+        })
+
+        // Start loading thumbnail if not cached
+        if (!thumbnailCache[file.id] && !loadingThumbnails.has(file.id)) {
+          const thumbnailUrl = generateThumbnailUrl(file)
+          if (thumbnailUrl) {
+            setLoadingThumbnails(prev => new Set([...prev, file.id]))
+            // Simulate thumbnail loading (in real app, this would be an API call)
+            setTimeout(() => {
+              setThumbnailCache(prev => ({ ...prev, [file.id]: thumbnailUrl }))
+              setLoadingThumbnails(prev => {
+                const newSet = new Set(prev)
+                newSet.delete(file.id)
+                return newSet
+              })
+            }, 300)
+          }
+        }
+      } else {
+        // Show info card for non-previewable files
+        const position = getPositionForPreview(triggerElement)
+        setPreviewState({
+          file,
+          position,
+          triggerElement
+        })
+      }
+    }, 150)
+  }
+
+  const handleFileHoverEnd = () => {
+    if (isMobileDevice) return
+
+    // Clear preview timeout if still pending
+    if (previewTimeoutRef.current) {
+      clearTimeout(previewTimeoutRef.current)
+      previewTimeoutRef.current = null
+    }
+
+    // Hide preview after delay to prevent flickering when moving between elements
+    hideTimeoutRef.current = setTimeout(() => {
+      setPreviewState({
+        file: null,
+        position: null,
+        triggerElement: null
+      })
+    }, 120)
+  }
+
+  const handleMobilePreview = (file: JobFile, triggerElement: HTMLElement) => {
+    if (!isMobileDevice) return
+
+    const position = getPositionForPreview(triggerElement)
+    setPreviewState({
+      file,
+      position,
+      triggerElement
+    })
+  }
+
+  const closeMobilePreview = () => {
+    setPreviewState({
+      file: null,
+      position: null,
+      triggerElement: null
+    })
+  }
+
+  // Preview Popover Component
+  const PreviewPopover: React.FC = () => {
+    if (!previewState.file || !previewState.position) return null
+
+    const file = previewState.file
+    const isPreviewable = isPreviewableFile(file)
+    const thumbnailUrl = thumbnailCache[file.id] || generateThumbnailUrl(file)
+    const isLoading = loadingThumbnails.has(file.id)
+
+    return createPortal(
+      <div
+        role="tooltip"
+        aria-label={`Preview of ${file.name}`}
+        style={{
+          position: 'fixed',
+          left: previewState.position.x,
+          top: previewState.position.y,
+          width: isPreviewable ? '320px' : '280px',
+          backgroundColor: 'white',
+          borderRadius: '12px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08)',
+          border: '1px solid rgba(0, 0, 0, 0.08)',
+          zIndex: 10000,
+          padding: '12px',
+          overflow: 'hidden',
+          cursor: 'default',
+          maxHeight: '320px'
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (isMobileDevice) {
+            closeMobilePreview()
+          }
+        }}
+        onMouseEnter={() => {
+          if (hideTimeoutRef.current) {
+            clearTimeout(hideTimeoutRef.current)
+            hideTimeoutRef.current = null
+          }
+        }}
+        onMouseLeave={() => {
+          if (!isMobileDevice) {
+            handleFileHoverEnd()
+          }
+        }}
+      >
+        {isPreviewable ? (
+          <>
+            {/* Thumbnail area */}
+            <div style={{
+              height: '200px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px',
+              marginBottom: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              position: 'relative'
+            }}>
+              {isLoading ? (
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  backgroundColor: '#e9ecef',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  animation: 'pulse 1.5s ease-in-out infinite'
+                }}>
+                  <div style={{
+                    fontSize: '13px',
+                    color: '#6b7280',
+                    fontWeight: '500'
+                  }}>
+                    Loading preview...
+                  </div>
+                </div>
+              ) : thumbnailUrl ? (
+                file.mimeType.includes('pdf') ? (
+                  // PDF preview using iframe with embedded viewer
+                  <iframe
+                    src={`${thumbnailUrl}#view=FitH&toolbar=0&navpanes=0&scrollbar=0&page=1&zoom=page-width`}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: '#ffffff'
+                    }}
+                    title={`Preview of ${file.name}`}
+                    onLoad={() => {
+                      console.log('PDF loaded successfully')
+                    }}
+                    onError={() => {
+                      console.log('PDF preview failed')
+                    }}
+                  />
+                ) : (
+                  // Image preview
+                  <img
+                    src={thumbnailUrl}
+                    alt={file.name}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      borderRadius: '4px'
+                    }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none'
+                      const placeholder = document.createElement('div')
+                      placeholder.innerHTML = `
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #6b7280; font-size: 13px; font-weight: 500;">
+                          Preview not available
+                        </div>
+                      `
+                      e.target.parentNode?.appendChild(placeholder)
+                    }}
+                  />
+                )
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  color: '#6b7280',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    opacity: 0.3,
+                    color: '#9ca3af'
+                  }}>
+                    {file.mimeType.includes('pdf') ? 'PDF' : 'IMG'}
+                  </div>
+                  <div>Preview not available</div>
+                </div>
+              )}
+            </div>
+
+            {/* File info */}
+            <div>
+              <div style={{
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#111827',
+                marginBottom: '4px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {file.name}
+              </div>
+              <div style={{
+                fontSize: '12px',
+                color: '#6b7280',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span>{getFileTypeLabel(file.type)}</span>
+                <span>{Math.round(file.size / 1024)}KB</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          // Info card for non-previewable files
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              marginBottom: '12px',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#6b7280'
+              }}>
+                DOC
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#111827',
+                  marginBottom: '2px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {file.name}
+                </div>
+                <div style={{
+                  fontSize: '12px',
+                  color: '#6b7280'
+                }}>
+                  {getFileTypeLabel(file.type)}
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              fontSize: '12px',
+              color: '#6b7280',
+              paddingTop: '8px',
+              borderTop: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between'
+            }}>
+              <span>Size: {Math.round(file.size / 1024)}KB</span>
+              <span>Uploaded: {new Date(file.uploadedAt).toLocaleDateString()}</span>
+            </div>
+          </div>
+        )}
+      </div>,
+      document.body
+    )
   }
 
   return (
@@ -2983,6 +3408,9 @@ const JobDashboard: React.FC = () => {
                         return (
                           <div
                             key={file.id}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`${file.name} - ${getFileTypeLabel(file.type)}`}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -2991,17 +3419,49 @@ const JobDashboard: React.FC = () => {
                               position: 'relative',
                               transition: 'background-color 0.15s ease',
                               borderRadius: '4px',
-                              margin: '0 -8px'
+                              margin: '0 -8px',
+                              outline: 'none'
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.backgroundColor = '#f9fafb'
                               setHoveredDocument(file.id)
+                              handleFileHover(file, e.currentTarget)
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.backgroundColor = 'transparent'
                               setHoveredDocument(null)
+                              handleFileHoverEnd()
                             }}
-                            onClick={() => window.open(file.url, '_blank')}
+                            onFocus={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f9fafb'
+                              e.currentTarget.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.5)'
+                              setHoveredDocument(file.id)
+                              handleFileHover(file, e.currentTarget)
+                            }}
+                            onBlur={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                              e.currentTarget.style.boxShadow = 'none'
+                              setHoveredDocument(null)
+                              handleFileHoverEnd()
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                if (isMobileDevice) {
+                                  handleMobilePreview(file, e.currentTarget)
+                                } else {
+                                  window.open(file.url, '_blank')
+                                }
+                              }
+                            }}
+                            onClick={(e) => {
+                              if (isMobileDevice) {
+                                e.preventDefault()
+                                handleMobilePreview(file, e.currentTarget)
+                              } else {
+                                window.open(file.url, '_blank')
+                              }
+                            }}
                           >
                             <div style={{
                               width: '140px',
@@ -3492,131 +3952,24 @@ const JobDashboard: React.FC = () => {
       </div>
     </div>
 
-    {/* File Preview Portal */}
-    {hoveredDocument && createPortal(
-      <div style={{
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '320px',
-        height: '180px',
-        backgroundColor: '#ffffff',
-        border: '2px solid #000000',
-        borderRadius: '8px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
-        zIndex: 9999,
-        padding: '16px',
-        display: 'flex',
-        flexDirection: 'column',
-        pointerEvents: 'none'
-      }}>
-        {(() => {
-          // Find the hovered file from any active file list
-          let file: JobFile | null = null
-          if (isCreatingNew && newJobForm?.files) {
-            file = newJobForm.files.find(f => f.id === hoveredDocument) || null
-          } else if (editForm?.files) {
-            file = editForm.files.find(f => f.id === hoveredDocument) || null
-          } else if (selectedJob?.files) {
-            file = selectedJob.files.find(f => f.id === hoveredDocument) || null
-          }
 
-          if (!file) return null
+    {/* Preview Popover */}
+    <PreviewPopover />
 
-          const isPreviewable = file.mimeType.includes('pdf') || file.mimeType.includes('image')
-
-          return isPreviewable ? (
-            <>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: '12px'
-              }}>
-                <div style={{
-                  width: '32px',
-                  height: '32px',
-                  backgroundColor: '#f3f4f6',
-                  borderRadius: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  {file.mimeType.includes('pdf') ? 'PDF' : 'IMG'}
-                </div>
-                <div>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#000000'
-                  }}>
-                    Document Preview
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    color: '#666666'
-                  }}>
-                    Click to open
-                  </div>
-                </div>
-              </div>
-              <div style={{
-                backgroundColor: '#f8f9fa',
-                border: '1px solid #e0e0e0',
-                borderRadius: '4px',
-                padding: '12px',
-                flex: 1,
-                fontSize: '12px',
-                color: '#333333'
-              }}>
-                <strong>{file.name}</strong><br/>
-                Type: {getFileTypeLabel(file.type)}<br/>
-                Size: {Math.round(file.size / 1024)}KB<br/>
-                Uploaded: {new Date(file.uploadedAt).toLocaleDateString()}
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{
-                textAlign: 'center',
-                padding: '20px',
-                color: '#666666'
-              }}>
-                <div style={{
-                  width: '32px',
-                  height: '32px',
-                  backgroundColor: '#f3f4f6',
-                  borderRadius: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  color: '#374151',
-                  margin: '0 auto 8px'
-                }}>
-                  FILE
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '500' }}>Preview not available</div>
-                <div style={{ fontSize: '12px', marginTop: '4px' }}>Click to download</div>
-              </div>
-              <div style={{
-                fontSize: '11px',
-                color: '#333333',
-                borderTop: '1px solid #e0e0e0',
-                paddingTop: '8px'
-              }}>
-                {file.name}
-              </div>
-            </>
-          )
-        })()}
-      </div>,
-      document.body
+    {/* Mobile overlay for closing preview */}
+    {isMobileDevice && previewState.file && (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'transparent',
+          zIndex: 9999
+        }}
+        onClick={closeMobilePreview}
+      />
     )}
     </>
   )

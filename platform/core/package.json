@@ -9,9 +9,9 @@
     "dev:backend": "tsx watch src/backend/index-with-db.ts",
     "dev:frontend": "vite",
     "build": "npm run build:backend && npm run build:frontend",
-    "build:backend": "tsc -p tsconfig.backend.json",
+    "build:backend": "mkdir -p dist/backend && cp -r src/backend/* dist/backend/",
     "build:frontend": "vite build",
-    "start": "node dist/backend/index-with-db.js",
+    "start": "node --loader=tsx dist/backend/index-with-db.ts",
     "test": "jest",
     "type-check": "tsc --noEmit"
   },

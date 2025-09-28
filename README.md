@@ -2,6 +2,8 @@
 
 A truly modular job-tracking application with plug-and-play architecture. Unlike Excel or Airtable, this platform provides specialized functionality for job searching while allowing users to customize their experience through modules.
 
+> **🗄️ Database Support**: This project is designed for Supabase by default. If you want to extend support for other databases, you can implement it yourself.
+
 ## 🎯 Core Concept
 
 The platform works like assembling a computer:
@@ -43,7 +45,7 @@ The platform works like assembling a computer:
 
 ### Prerequisites
 - Node.js 18+
-- MongoDB (local or cloud)
+- PostgreSQL database (recommended: Supabase)
 - Redis (optional, for distributed events)
 
 ### Installation
@@ -59,10 +61,9 @@ The platform works like assembling a computer:
    ```bash
    # Copy environment template
    cp .env.example .env
-   
-   # Configure database URLs
-   DATABASE_URL=mongodb://localhost:27017
-   DATABASE_NAME=job_tracker
+
+   # Configure database connection (example for Supabase)
+   DATABASE_URL=postgresql://user:password@host:5432/database
    REDIS_URL=redis://localhost:6379  # Optional
    JWT_SECRET=your-super-secret-key
    ```

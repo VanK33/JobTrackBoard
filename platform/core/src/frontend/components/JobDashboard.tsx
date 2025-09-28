@@ -1,17 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
-interface ProgressRecord {
-  id: string
-  type: 'applied' | 'status_update' | 'follow_up' | 'interview' | 'offer' | 'rejection' | 'note'
-  date: string
-  fromStatus?: string
-  toStatus?: string
-  note?: string
-  operator?: string
-  attachments?: string[]
-}
-
 interface Job {
   _id: string
   title: string
@@ -21,7 +10,7 @@ interface Job {
   requirements?: string[]
   responsibilities?: string[]
   qualifications?: string[]
-  status: 'applied' | 'screening' | 'interview' | 'offer' | 'offered' | 'rejected'
+  status: 'applied' | 'screening' | 'interview' | 'offered' | 'rejected'
   rejectedAt?: string // Which stage the job was rejected at
   jobUrl?: string
   notes?: string
@@ -29,13 +18,16 @@ interface Job {
   appliedAt?: string
   createdAt: string
   updatedAt: string
-  progressRecords?: ProgressRecord[]
   statusHistory?: {
     status: string
     date: string
     operator?: string
     note?: string
   }[]
+  progress?: Array<{
+    stage: string
+    at: string
+  }>
 }
 
 interface JobFile {
@@ -148,227 +140,79 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     rejected: 'Rejected'
   }
 
-  // Mock data for demo
-  const mockJobs: Job[] = [
-    {
-      _id: '1',
-      title: 'Software Engineer',
-      company: 'Google',
-      location: 'Mountain View, CA',
-      jobDescription: 'We are looking for a talented software engineer to join our team. You will be responsible for developing and maintaining web applications using modern technologies. This role requires strong problem-solving skills and experience with JavaScript frameworks.',
-      status: 'interview',
-      appliedAt: '2023-10-28',
-      createdAt: '2023-10-25',
-      updatedAt: '2023-10-28',
-      files: [
-        {
-          id: '1',
-          name: 'resume.pdf',
-          type: 'resume',
-          mimeType: 'application/pdf',
-          size: 245760,
-          url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-          uploadedAt: '2023-10-25'
-        },
-        {
-          id: '1b',
-          name: 'cover_letter.pdf',
-          type: 'cover-letter',
-          mimeType: 'application/pdf',
-          size: 156789,
-          url: 'https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf',
-          uploadedAt: '2023-10-25'
-        },
-        {
-          id: '1c',
-          name: 'portfolio_screenshot.png',
-          type: 'portfolio',
-          mimeType: 'image/png',
-          size: 256000,
-          url: 'https://picsum.photos/800/600?random=1',
-          uploadedAt: '2023-10-25'
-        },
-        {
-          id: '1d',
-          name: 'design_mockup.jpg',
-          type: 'portfolio',
-          mimeType: 'image/jpeg',
-          size: 312000,
-          url: 'https://picsum.photos/1200/800?random=2',
-          uploadedAt: '2023-10-26'
+  // Empty initial state - will load from database
+
+  // Database connection - jobs state is already declared above
+
+  const fetchJobsFromDatabase = async () => {
+    try {
+      console.log('🔍 Starting fetch from database...')
+      setLoading(true)
+
+      // First check if backend is available
+      const healthResponse = await fetch('http://localhost:3000/health', {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      })
+
+      if (!healthResponse.ok) {
+        throw new Error('Backend server is not available')
+      }
+
+      const response = await fetch('http://localhost:3000/api/jobs', {
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      })
+
+      console.log('📡 Response received:', response.status, response.ok)
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Response is not JSON')
+      }
+
+      const data = await response.json()
+      console.log('📊 Raw data from database:', data.length, 'jobs')
+
+      // Backend already converts to frontend format via DataMapper
+      const transformedJobs = data
+
+      console.log('✅ Transformed jobs:', transformedJobs.length, 'jobs ready for display')
+      setJobs(transformedJobs)
+
+    } catch (error) {
+      console.error('Database fetch error:', error)
+
+      // Try to load from localStorage as fallback
+      try {
+        const localStorageData = localStorage.getItem('jobTrackerJobs')
+        if (localStorageData) {
+          const localJobs = JSON.parse(localStorageData)
+          console.log('📋 Loaded fallback data from localStorage:', localJobs.length, 'jobs')
+          setJobs(localJobs)
+        } else {
+          setJobs([]) // No data available
         }
-      ],
-      notes: 'Follow up call Nov 1, Follow with recruiter Nov 8',
-      progressRecords: [
-        {
-          id: 'p1',
-          type: 'applied',
-          date: '2023-10-25',
-          note: 'Applied through company website',
-          operator: 'Self'
-        },
-        {
-          id: 'p2',
-          type: 'status_update',
-          date: '2023-10-27',
-          fromStatus: 'applied',
-          toStatus: 'screening',
-          note: 'Recruiter reached out for phone screening',
-          operator: 'HR Team'
-        },
-        {
-          id: 'p3',
-          type: 'status_update',
-          date: '2023-10-28',
-          fromStatus: 'screening',
-          toStatus: 'interview',
-          note: 'Passed phone screening, scheduled technical interview',
-          operator: 'Hiring Manager'
-        }
-      ],
-      statusHistory: [
-        { status: 'applied', date: '2023-10-25', operator: 'Self', note: 'Applied through company website' },
-        { status: 'screening', date: '2023-10-27', operator: 'HR Team', note: 'Phone screening scheduled' },
-        { status: 'interview', date: '2023-10-28', operator: 'Hiring Manager', note: 'Technical interview scheduled' }
-      ]
-    },
-    {
-      _id: '2',
-      title: 'Frontend Developer',
-      company: 'Meta',
-      location: 'Menlo Park, CA',
-      jobDescription: 'Join our frontend team to build cutting-edge user interfaces for billions of users. We use React, TypeScript, and modern CSS frameworks.',
-      status: 'applied',
-      appliedAt: '2023-10-26',
-      createdAt: '2023-10-26',
-      updatedAt: '2023-10-26',
-      files: [
-        {
-          id: '2',
-          name: 'resume_meta.pdf',
-          type: 'resume',
-          mimeType: 'application/pdf',
-          size: 198432,
-          url: '/files/resume_meta.pdf',
-          uploadedAt: '2023-10-26'
-        }
-      ],
-      progressRecords: [
-        {
-          id: 'p4',
-          type: 'applied',
-          date: '2023-10-26',
-          note: 'Applied via LinkedIn',
-          operator: 'Self'
-        }
-      ],
-      statusHistory: [
-        { status: 'applied', date: '2023-10-26', operator: 'Self', note: 'Applied via LinkedIn' }
-      ]
-    },
-    {
-      _id: '3',
-      title: 'Full Stack Engineer',
-      company: 'Netflix',
-      location: 'Los Gatos, CA',
-      jobDescription: 'Build and scale backend services and frontend applications that power Netflix experiences for millions of users worldwide.',
-      status: 'offered',
-      appliedAt: '2023-10-20',
-      createdAt: '2023-10-20',
-      updatedAt: '2023-10-30',
-      files: [
-        {
-          id: '3',
-          name: 'netflix_resume.pdf',
-          type: 'resume',
-          mimeType: 'application/pdf',
-          size: 267890,
-          url: '/files/netflix_resume.pdf',
-          uploadedAt: '2023-10-20'
-        }
-      ],
-      progressRecords: [
-        {
-          id: 'p5',
-          type: 'applied',
-          date: '2023-10-20',
-          note: 'Applied directly through Netflix careers page',
-          operator: 'Self'
-        },
-        {
-          id: 'p6',
-          type: 'status_update',
-          date: '2023-10-30',
-          fromStatus: 'interview',
-          toStatus: 'offer',
-          note: 'Received offer after successful technical rounds',
-          operator: 'Hiring Manager'
-        }
-      ],
-      statusHistory: [
-        { status: 'applied', date: '2023-10-20', operator: 'Self' },
-        { status: 'screening', date: '2023-10-22', operator: 'HR Team' },
-        { status: 'interview', date: '2023-10-25', operator: 'Technical Team' },
-        { status: 'offer', date: '2023-10-30', operator: 'Hiring Manager', note: 'Offer extended' }
-      ]
-    },
-    {
-      _id: '4',
-      title: 'Senior Backend Engineer',
-      company: 'Stripe',
-      location: 'San Francisco, CA',
-      jobDescription: 'Build robust and scalable payment infrastructure that serves millions of businesses worldwide.',
-      status: 'rejected',
-      rejectedAt: 'screening',
-      appliedAt: '2023-10-15',
-      createdAt: '2023-10-15',
-      updatedAt: '2023-10-22',
-      files: [
-        {
-          id: '4',
-          name: 'stripe_resume.pdf',
-          type: 'resume',
-          mimeType: 'application/pdf',
-          size: 234567,
-          url: '/files/stripe_resume.pdf',
-          uploadedAt: '2023-10-15'
-        }
-      ],
-      notes: 'Rejected after phone screening - lacking distributed systems experience',
-      progressRecords: [
-        {
-          id: 'p7',
-          type: 'applied',
-          date: '2023-10-15',
-          note: 'Applied directly on company website',
-          operator: 'Self'
-        },
-        {
-          id: 'p8',
-          type: 'status_update',
-          date: '2023-10-18',
-          fromStatus: 'applied',
-          toStatus: 'screening',
-          note: 'Phone screening scheduled',
-          operator: 'HR Team'
-        },
-        {
-          id: 'p9',
-          type: 'rejection',
-          date: '2023-10-22',
-          fromStatus: 'screening',
-          toStatus: 'rejected',
-          note: 'Rejected after phone screening - lacking distributed systems experience',
-          operator: 'Technical Lead'
-        }
-      ],
-      statusHistory: [
-        { status: 'applied', date: '2023-10-15', operator: 'Self' },
-        { status: 'screening', date: '2023-10-18', operator: 'HR Team' },
-        { status: 'rejected', date: '2023-10-22', operator: 'Technical Lead', note: 'Lacking distributed systems experience' }
-      ]
+      } catch (localError) {
+        console.error('Failed to load from localStorage:', localError)
+        setJobs([]) // Fallback to empty on all errors
+      }
+    } finally {
+      console.log('🏁 Setting loading to false')
+      setLoading(false)
     }
-  ]
+  }
+
+  useEffect(() => {
+    console.log('⚡ JobDashboard useEffect triggered')
+    fetchJobsFromDatabase()
+  }, [])
+
+  // Use jobs directly from database (empty array when no data)
+  const displayJobs = jobs
 
   const handleDeleteJob = async (jobId: string) => {
     if (deleteConfirmStep === 1) {
@@ -381,14 +225,23 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     }
 
     try {
-      // API call would go here
-      setJobs(jobs.filter(job => job._id !== jobId))
-      if (selectedJob?._id === jobId) {
-        setSelectedJob(jobs.length > 1 ? jobs.find(j => j._id !== jobId) || null : null)
+      // Call backend API to delete job
+      const response = await fetch(`http://localhost:3000/api/jobs/${jobId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        // Update frontend state only after successful API call
+        setJobs(jobs.filter(job => job._id !== jobId))
+        if (selectedJob?._id === jobId) {
+          setSelectedJob(jobs.length > 1 ? jobs.find(j => j._id !== jobId) || null : null)
+        }
+        setShowDeleteConfirm(null)
+        setDeleteConfirmStep(1)
+        setDeleteConfirmText('')
+      } else {
+        throw new Error('Failed to delete job from server')
       }
-      setShowDeleteConfirm(null)
-      setDeleteConfirmStep(1)
-      setDeleteConfirmText('')
     } catch (error) {
       console.error('Failed to delete job:', error)
     }
@@ -402,7 +255,9 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
   const handleEditJob = () => {
     if (selectedJob) {
-      setEditForm({ ...selectedJob })
+      const editJobData = { ...selectedJob }
+      // Backend will provide complete statusHistory from database
+      setEditForm(editJobData)
       setIsEditing(true)
       setHasUnsavedChanges(false)
       setValidationErrors([])
@@ -419,18 +274,45 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     }
 
     try {
-      // API call would go here
-      const updatedJobs = jobs.map(job =>
-        job._id === editForm._id ? editForm : job
-      )
-      setJobs(updatedJobs)
-      setSelectedJob(editForm)
-      setIsEditing(false)
-      setEditForm(null)
-      setHasUnsavedChanges(false)
-      setValidationErrors([])
+      // API call to update job
+      const response = await fetch(`http://localhost:3000/api/jobs/${editForm._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(editForm)
+      })
+
+      if (response.ok) {
+        // Get the latest job data to ensure we have updated files
+        const freshJobResponse = await fetch(`http://localhost:3000/api/jobs/${editForm._id}`)
+        if (freshJobResponse.ok) {
+          const updatedJob = await freshJobResponse.json()
+          const updatedJobs = jobs.map(job =>
+            job._id === editForm._id ? updatedJob : job
+          )
+          setJobs(updatedJobs)
+          setSelectedJob(updatedJob)
+        } else {
+          // Fallback to response from update call
+          const updatedJob = await response.json()
+          const updatedJobs = jobs.map(job =>
+            job._id === editForm._id ? updatedJob : job
+          )
+          setJobs(updatedJobs)
+          setSelectedJob(updatedJob)
+        }
+        setIsEditing(false)
+        setEditForm(null)
+        setHasUnsavedChanges(false)
+        setValidationErrors([])
+      } else {
+        console.error('Failed to update job:', response.statusText)
+        alert('Failed to update job. Please try again.')
+      }
     } catch (error) {
       console.error('Failed to save job:', error)
+      alert('Network error. Please check your connection and try again.')
     }
   }
 
@@ -462,12 +344,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       updatedAt: new Date().toISOString(),
       appliedAt: new Date().toISOString(),
       files: [],
-      statusHistory: [{
-        status: 'applied',
-        date: new Date().toISOString(),
-        operator: 'User',
-        note: 'Application started'
-      }]
+      // Backend will create statusHistory automatically based on status
     }
 
     setNewJobForm(newJob)
@@ -491,9 +368,6 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     if (!job.jobDescription?.trim()) {
       errors.push('Job Description is required')
     }
-    if (!job.statusHistory || job.statusHistory.length === 0) {
-      errors.push('At least one progress date is required')
-    }
 
     return errors
   }
@@ -508,20 +382,78 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     }
 
     try {
-      // API call would go here
-      const finalJob = {
-        ...newJobForm,
-        _id: `job-${Date.now()}`, // Replace temporary ID with real one
-        updatedAt: new Date().toISOString()
-      }
+      // API call to create new job
+      const response = await fetch('http://localhost:3000/api/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newJobForm)
+      })
 
-      setJobs([finalJob, ...jobs])
-      setSelectedJob(finalJob)
-      setIsCreatingNew(false)
-      setNewJobForm(null)
-      setValidationErrors([])
+      if (response.ok) {
+        const createdJob = await response.json()
+
+        // Handle pending file uploads
+        const pendingFiles = newJobForm?.files?.filter(f => f.uploadStatus === 'pending') || []
+
+        // Clean up form state immediately
+        setIsCreatingNew(false)
+        const tempNewJobForm = newJobForm // Store before clearing
+        setNewJobForm(null)
+        setValidationErrors([])
+
+        // Refresh jobs from database to get complete data
+        try {
+          await fetchJobsFromDatabase()
+
+          // Find and select the newly created job from refreshed data
+          const refreshedJobs = await fetch('http://localhost:3000/api/jobs').then(r => r.json())
+          const newJob = refreshedJobs.find((j: any) => j.id.toString() === createdJob.id.toString())
+          if (newJob) {
+            setSelectedJob({
+              ...newJob,
+              _id: newJob.id.toString()
+            })
+
+            // Upload pending files to the newly created job
+            if (pendingFiles.length > 0) {
+              const jobIdString = createdJob.id?.toString()
+              console.log(`Uploading ${pendingFiles.length} pending files to job ${createdJob.id} (jobIdString: ${jobIdString})`)
+
+              if (!jobIdString || jobIdString === 'undefined' || jobIdString === 'NaN') {
+                console.error('Invalid jobId for file upload:', createdJob.id)
+                return
+              }
+
+              for (const pendingFile of pendingFiles) {
+                try {
+                  // Convert URL back to File object for upload
+                  const response = await fetch(pendingFile.url)
+                  const blob = await response.blob()
+                  const file = new File([blob], pendingFile.name, { type: pendingFile.mimeType })
+
+                  await realFileUpload(file, jobIdString, pendingFile.type)
+                  console.log(`Successfully uploaded ${pendingFile.name}`)
+                } catch (uploadError) {
+                  console.error(`Failed to upload ${pendingFile.name}:`, uploadError)
+                }
+              }
+              // Refresh again to show uploaded files
+              await fetchJobsFromDatabase()
+            }
+          }
+        } catch (refreshError) {
+          console.error('Failed to refresh jobs after creation:', refreshError)
+          // Still show success since job was created
+        }
+      } else {
+        console.error('Failed to create job:', response.statusText)
+        alert('Failed to create job. Please try again.')
+      }
     } catch (error) {
       console.error('Failed to create job:', error)
+      alert('Network error. Please check your connection and try again.')
     }
   }
 
@@ -541,17 +473,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       updatedAt: new Date().toISOString()
     }
 
-    // Handle status changes in new job form
+    // Handle status changes in new job form - backend will create statusHistory
     if (field === 'status' && value !== newJobForm.status) {
       const currentTime = new Date().toISOString()
-      const newHistoryEntry = {
-        status: value,
-        date: currentTime,
-        operator: 'User',
-        note: `Status set to ${statusLabels[value as keyof typeof statusLabels]}`
-      }
-
-      updatedForm.statusHistory = [...(newJobForm.statusHistory || []), newHistoryEntry]
+      updatedForm.appliedAt = currentTime
+      // Backend will automatically create statusHistory based on status
     }
 
     setNewJobForm(updatedForm)
@@ -573,25 +499,18 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       updatedAt: new Date().toISOString()
     }
 
-    // Handle status changes in draft - update statusHistory in draft
+    // Handle status changes in draft
     if (field === 'status' && value !== editForm.status) {
-      const currentTime = new Date().toISOString()
-      const newHistoryEntry = {
-        status: value,
-        date: currentTime,
-        operator: 'User',
-        note: `Status changed via edit form to ${statusLabels[value as keyof typeof statusLabels]}`
-      }
-
       // Handle rejection status in draft
       let rejectedAt = editForm.rejectedAt
       if (value === 'rejected') {
-        rejectedAt = editForm.status // Store which stage the job was rejected at
+        // Only store valid statuses that exist in statusLabels
+        rejectedAt = statusLabels[editForm.status as keyof typeof statusLabels] ? editForm.status : 'applied'
       } else if (editForm.status === 'rejected' && value !== 'rejected') {
         rejectedAt = undefined // Clear rejection if moving away from rejected
       }
 
-      updatedForm.statusHistory = [...(editForm.statusHistory || []), newHistoryEntry]
+      // Backend will handle statusHistory creation when job is saved
       updatedForm.rejectedAt = rejectedAt
     }
 
@@ -625,15 +544,32 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     setHasUnsavedChanges(true)
   }
 
-  const handleRemoveDocument = (fileId: string) => {
+  const handleRemoveDocument = async (fileId: string) => {
     if (!editForm) return
 
-    setEditForm({
-      ...editForm,
-      files: editForm.files?.filter(file => file.id !== fileId) || [],
-      updatedAt: new Date().toISOString()
-    })
-    setHasUnsavedChanges(true)
+    try {
+      // Call API to delete file from server and database
+      const response = await fetch(`/api/jobs/${editForm._id}/files/${fileId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete file')
+      }
+
+      // Update local state after successful deletion
+      setEditForm({
+        ...editForm,
+        files: editForm.files?.filter(file => file.id !== fileId) || [],
+        updatedAt: new Date().toISOString()
+      })
+
+      // Don't set hasUnsavedChanges since this is already saved to database
+    } catch (error) {
+      console.error('Error deleting file:', error)
+      // Could add toast notification here for user feedback
+    }
   }
 
   const handleDocumentChange = (fileId: string, field: keyof JobFile, value: any) => {
@@ -676,63 +612,44 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     return null
   }
 
-  const simulateFileUpload = async (file: File, onProgress?: (progress: number) => void): Promise<JobFile> => {
-    const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-    // Create initial file object with uploading status
-    const uploadingFile: JobFile = {
-      id: fileId,
-      name: file.name,
-      type: 'other', // Default type, can be changed by user
-      mimeType: file.type,
-      size: file.size,
-      url: URL.createObjectURL(file), // Temporary URL for preview
-      uploadedAt: new Date().toISOString(),
-      uploadProgress: 0,
-      uploadStatus: 'uploading'
-    }
-
-    // Simulate upload progress
+  const realFileUpload = async (file: File, jobId: string, fileType: string = 'other', onProgress?: (progress: number) => void): Promise<JobFile> => {
     return new Promise((resolve, reject) => {
-      let progress = 0
-      const interval = setInterval(() => {
-        progress += Math.random() * 25 + 5 // 5-30% increments
-        if (progress >= 100) {
-          progress = 100
-          clearInterval(interval)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('type', fileType)
 
-          // Update progress one final time
-          setUploadProgressMap(prev => ({
-            ...prev,
-            [fileId]: 100
-          }))
+      const xhr = new XMLHttpRequest()
 
-          // Create the final file object
-          const uploadedFile: JobFile = {
-            ...uploadingFile,
-            uploadProgress: 100,
-            uploadStatus: 'completed'
-          }
-
-          // Clean up progress tracking after a short delay
-          setTimeout(() => {
-            setUploadProgressMap(prev => {
-              const newMap = { ...prev }
-              delete newMap[fileId]
-              return newMap
-            })
-          }, 1000)
-
-          resolve(uploadedFile)
-        } else {
-          // Update progress
-          setUploadProgressMap(prev => ({
-            ...prev,
-            [fileId]: Math.round(progress)
-          }))
-          onProgress?.(Math.round(progress))
+      // Handle upload progress
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100)
+          onProgress(progress)
         }
-      }, 150) // Slightly faster updates for smoother progress
+      }
+
+      // Handle completion
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
+            const uploadedFile = JSON.parse(xhr.responseText)
+            resolve(uploadedFile)
+          } catch (error) {
+            reject(new Error('Invalid response format'))
+          }
+        } else {
+          reject(new Error(`Upload failed with status ${xhr.status}`))
+        }
+      }
+
+      // Handle errors
+      xhr.onerror = () => {
+        reject(new Error('Upload failed'))
+      }
+
+      // Start upload
+      xhr.open('POST', `http://localhost:3000/api/jobs/${jobId}/files`)
+      xhr.send(formData)
     })
   }
 
@@ -749,12 +666,46 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       }
 
       try {
+        // Check if we have a valid job to upload to
+        const jobId = isCreatingNew ? null : (isEditing ? editForm?._id : selectedJob?._id)
+        if (!jobId) {
+          if (isCreatingNew) {
+            console.log('Cannot upload files during creation: Job must be saved first')
+            // Store files temporarily for new job creation
+            const tempFile: JobFile = {
+              id: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              type: 'other',
+              mimeType: file.type,
+              size: file.size,
+              url: URL.createObjectURL(file),
+              uploadedAt: new Date().toISOString(),
+              uploadStatus: 'pending'
+            }
+
+            if (newJobForm) {
+              setNewJobForm({
+                ...newJobForm,
+                files: [...(newJobForm.files || []), tempFile]
+              })
+            }
+            continue
+          } else {
+            console.error('Cannot upload files: No job selected')
+            setFileUploadState(prev => ({
+              ...prev,
+              failedFiles: new Set([...prev.failedFiles, file.name])
+            }))
+            continue
+          }
+        }
+
         setFileUploadState(prev => ({
           ...prev,
           uploadingFiles: new Set([...prev.uploadingFiles, file.name])
         }))
 
-        // Create initial uploading file object
+        // Create initial uploading file object for UI
         const fileId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         const uploadingFile: JobFile = {
           id: fileId,
@@ -769,24 +720,13 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         }
 
         // Add uploading file immediately to UI
-        if (isCreatingNew && newJobForm) {
-          setNewJobForm({
-            ...newJobForm,
-            files: [...(newJobForm.files || []), uploadingFile],
-            updatedAt: new Date().toISOString()
-          })
-          setSelectedJob({
-            ...newJobForm,
-            files: [...(newJobForm.files || []), uploadingFile],
-            updatedAt: new Date().toISOString()
-          })
-        } else if (isEditing && editForm) {
+        if (isEditing && editForm) {
           setEditForm({
             ...editForm,
             files: [...(editForm.files || []), uploadingFile],
             updatedAt: new Date().toISOString()
           })
-          setHasUnsavedChanges(true)
+          // Don't set hasUnsavedChanges - file uploads are saved immediately
         } else if (selectedJob && !isCreatingNew && !isEditing) {
           // Direct upload to existing job (detail view)
           const updatedJob = {
@@ -801,42 +741,32 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
           ))
         }
 
-        // Start upload simulation
-        const uploadedFile = await simulateFileUpload(file)
+        const uploadedFile = await realFileUpload(file, jobId, 'other', (progress) => {
+          setUploadProgressMap(prev => ({
+            ...prev,
+            [fileId]: progress
+          }))
+        })
 
-        // Update file to completed status
-        if (isCreatingNew && newJobForm) {
-          setNewJobForm(prev => {
-            if (!prev) return prev
-            return {
-              ...prev,
-              files: prev.files?.map(f => f.id === fileId ? uploadedFile : f) || [],
-              updatedAt: new Date().toISOString()
-            }
-          })
-          setSelectedJob(prev => {
-            if (!prev) return prev
-            return {
-              ...prev,
-              files: prev.files?.map(f => f.id === fileId ? uploadedFile : f) || [],
-              updatedAt: new Date().toISOString()
-            }
-          })
-        } else if (isEditing && editForm) {
+        // File uploaded successfully - replace the placeholder with the real file
+        if (isEditing && editForm) {
           setEditForm(prev => {
             if (!prev) return prev
+            // Remove the uploading placeholder and add the real uploaded file
+            const filteredFiles = (prev.files || []).filter(f => f.id !== fileId)
             return {
               ...prev,
-              files: prev.files?.map(f => f.id === fileId ? uploadedFile : f) || [],
+              files: [...filteredFiles, uploadedFile],
               updatedAt: new Date().toISOString()
             }
           })
-          setHasUnsavedChanges(true)
+          // Don't set hasUnsavedChanges since file is already saved to server
         } else if (selectedJob && !isCreatingNew && !isEditing) {
-          // Update completed file in detail view
+          // Update file in detail view (direct upload to existing job)
+          const filteredFiles = (selectedJob.files || []).filter(f => f.id !== fileId)
           const updatedJob = {
             ...selectedJob,
-            files: selectedJob.files?.map(f => f.id === fileId ? uploadedFile : f) || [],
+            files: [...filteredFiles, uploadedFile],
             updatedAt: new Date().toISOString()
           }
           setSelectedJob(updatedJob)
@@ -905,8 +835,9 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     setEditingFileName(null)
   }
 
-  const handleFileDelete = (fileId: string) => {
+  const handleFileDelete = async (fileId: string) => {
     if (isCreatingNew && newJobForm) {
+      // For new jobs, just remove from local state
       const updatedFiles = newJobForm.files?.filter(file => file.id !== fileId) || []
       setNewJobForm({
         ...newJobForm,
@@ -919,164 +850,134 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         updatedAt: new Date().toISOString()
       })
     } else if (isEditing && editForm) {
-      handleRemoveDocument(fileId)
+      await handleRemoveDocument(fileId)
+    } else if (selectedJob) {
+      await handleRemoveDocument(fileId)
     }
   }
 
   // Unified Status Management Functions
-  const updateJobStatus = (jobId: string, newStatus: string, note?: string, operator?: string) => {
+  const updateJobStatus = async (jobId: string, newStatus: string, note?: string, operator?: string) => {
     const job = jobs.find(j => j._id === jobId)
     if (!job) return
 
     const currentTime = new Date().toISOString()
     const currentStatus = job.status
 
-    // Create new status history entry
-    const newHistoryEntry = {
-      status: newStatus,
-      date: currentTime,
-      operator: operator || 'User',
-      note: note || `Status changed from ${statusLabels[currentStatus as keyof typeof statusLabels]} to ${statusLabels[newStatus as keyof typeof statusLabels]}`
-    }
-
-    // Create new progress record
-    const newProgressRecord: ProgressRecord = {
-      id: Date.now().toString(),
-      type: 'status_update',
-      date: currentTime,
-      fromStatus: currentStatus,
-      toStatus: newStatus,
-      note: note,
-      operator: operator || 'User'
-    }
-
-    // Handle rejection status
+    // Handle rejection status logic
     let rejectedAt = job.rejectedAt
     if (newStatus === 'rejected') {
-      rejectedAt = currentStatus // Store which stage the job was rejected at
-      newProgressRecord.type = 'rejection'
+      // Only store valid statuses that exist in statusLabels
+      rejectedAt = statusLabels[currentStatus as keyof typeof statusLabels] ? currentStatus : 'applied'
     }
 
-    // Update job object
-    const updatedJob: Job = {
-      ...job,
-      status: newStatus as any,
-      rejectedAt,
-      updatedAt: currentTime,
-      statusHistory: [...(job.statusHistory || []), newHistoryEntry],
-      progressRecords: [...(job.progressRecords || []), newProgressRecord]
-    }
+    // API call to persist status change to database
+    try {
+      // Update the job status - backend handles smart status history recording
+      const jobResponse = await fetch(`http://localhost:3000/api/jobs/${jobId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: newStatus,
+          rejectedAt,
+          updatedAt: currentTime
+        })
+      })
 
-    // Update jobs state
-    const updatedJobs = jobs.map(j => j._id === jobId ? updatedJob : j)
-    setJobs(updatedJobs)
+      if (!jobResponse.ok) {
+        console.error('Failed to update job status:', jobResponse.statusText)
+        return
+      }
 
-    // Update selected job if it's the one being updated
-    if (selectedJob?._id === jobId) {
-      setSelectedJob(updatedJob)
-    }
+      // Get the updated job data from backend (includes fresh statusHistory from database)
+      const updatedJobData = await jobResponse.json()
 
-    // Update edit form if it's the same job
-    if (editForm?._id === jobId) {
-      setEditForm(updatedJob)
+      // Update local state with backend data (ensuring statusHistory comes from database)
+      const updatedJob: Job = {
+        ...job,
+        ...updatedJobData,
+        _id: jobId, // Ensure frontend ID consistency
+      }
+
+      // Update jobs state
+      const updatedJobs = jobs.map(j => j._id === jobId ? updatedJob : j)
+      setJobs(updatedJobs)
+
+      // Update selected job if it's the one being updated
+      if (selectedJob?._id === jobId) {
+        setSelectedJob(updatedJob)
+      }
+
+      // Update edit form if it's the same job
+      if (editForm?._id === jobId) {
+        setEditForm(updatedJob)
+      }
+
+      // Refresh the job's status history from database to ensure consistency
+      await refreshJobData(jobId)
+
+    } catch (error) {
+      console.error('Failed to update job status:', error)
+      // Revert the optimistic update by refreshing the job data
+      try {
+        await fetchJobsFromDatabase()
+      } catch (fetchError) {
+        console.error('Failed to refresh jobs after update error:', fetchError)
+      }
+      // Optionally show user-friendly error message
+      // TODO: Add proper error toast/notification system
     }
   }
 
+  // Helper function to refresh job data from backend
+  const refreshJobData = async (jobId: string) => {
+    try {
+      const response = await fetch(`http://localhost:3000/api/jobs/${jobId}`)
+      if (response.ok) {
+        const freshJobData = await response.json()
+        const refreshedJob: Job = {
+          ...freshJobData,
+          _id: jobId,
+        }
+
+        // Update jobs list
+        const updatedJobs = jobs.map(j => j._id === jobId ? refreshedJob : j)
+        setJobs(updatedJobs)
+
+        // Update selected job if it matches
+        if (selectedJob?._id === jobId) {
+          setSelectedJob(refreshedJob)
+        }
+
+        // Update edit form if it matches
+        if (editForm?._id === jobId) {
+          setEditForm(refreshedJob)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to refresh job data:', error)
+    }
+  }
+
+  // Remove manual status history editing - all status changes are now database-driven
+  // Status history is automatically managed by backend when updateJobStatus is called
   const editStatusHistoryEntry = (jobId: string, historyIndex: number, patch: Partial<any>) => {
-    const job = jobs.find(j => j._id === jobId)
-    if (!job || !job.statusHistory) return
-
-    const updatedStatusHistory = [...job.statusHistory]
-    updatedStatusHistory[historyIndex] = { ...updatedStatusHistory[historyIndex], ...patch }
-
-    // Recalculate current status from the latest history entry
-    const latestEntry = updatedStatusHistory[updatedStatusHistory.length - 1]
-    const newCurrentStatus = latestEntry.status
-
-    // Update rejection status
-    let rejectedAt = undefined
-    const rejectionEntry = updatedStatusHistory.find(entry => entry.status === 'rejected')
-    if (rejectionEntry && newCurrentStatus === 'rejected') {
-      // Find the previous status before rejection
-      const rejectionIndex = updatedStatusHistory.findIndex(entry => entry.status === 'rejected')
-      rejectedAt = rejectionIndex > 0 ? updatedStatusHistory[rejectionIndex - 1].status : 'applied'
-    }
-
-    // Update the job
-    const updatedJob: Job = {
-      ...job,
-      status: newCurrentStatus as any,
-      rejectedAt,
-      updatedAt: new Date().toISOString(),
-      statusHistory: updatedStatusHistory
-    }
-
-    // Update jobs state
-    const updatedJobs = jobs.map(j => j._id === jobId ? updatedJob : j)
-    setJobs(updatedJobs)
-
-    // Update selected job if it's the one being updated
-    if (selectedJob?._id === jobId) {
-      setSelectedJob(updatedJob)
-    }
-
-    // Update edit form if it's the same job
-    if (editForm?._id === jobId) {
-      setEditForm(updatedJob)
-    }
+    console.log('Manual status history editing disabled - use status change buttons instead')
+    // All statusHistory changes should go through updateJobStatus() which calls the backend
   }
 
   const deleteStatusHistoryEntry = (jobId: string, historyIndex: number) => {
-    const job = jobs.find(j => j._id === jobId)
-    if (!job || !job.statusHistory) return
-
-    const updatedStatusHistory = [...job.statusHistory]
-    updatedStatusHistory.splice(historyIndex, 1)
-
-    // Recalculate current status from the latest remaining entry
-    const latestEntry = updatedStatusHistory[updatedStatusHistory.length - 1]
-    const newCurrentStatus = latestEntry?.status || 'applied'
-
-    // Update rejection status
-    let rejectedAt = undefined
-    const rejectionEntry = updatedStatusHistory.find(entry => entry.status === 'rejected')
-    if (rejectionEntry && newCurrentStatus === 'rejected') {
-      const rejectionIndex = updatedStatusHistory.findIndex(entry => entry.status === 'rejected')
-      rejectedAt = rejectionIndex > 0 ? updatedStatusHistory[rejectionIndex - 1].status : 'applied'
-    }
-
-    // Update the job
-    const updatedJob: Job = {
-      ...job,
-      status: newCurrentStatus as any,
-      rejectedAt,
-      updatedAt: new Date().toISOString(),
-      statusHistory: updatedStatusHistory
-    }
-
-    // Update jobs state
-    const updatedJobs = jobs.map(j => j._id === jobId ? updatedJob : j)
-    setJobs(updatedJobs)
-
-    // Update selected job if it's the one being updated
-    if (selectedJob?._id === jobId) {
-      setSelectedJob(updatedJob)
-    }
-
-    // Update edit form if it's the same job
-    if (editForm?._id === jobId) {
-      setEditForm(updatedJob)
-    }
+    console.log('Manual status history deletion disabled - status history is database-managed')
+    // All statusHistory changes should go through updateJobStatus() which calls the backend
   }
 
+  // Remove old simulation - now handled by fetchJobsFromDatabase
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setJobs(mockJobs)
-      // Start with no selection
-      setSelectedJob(null)
-      setLoading(false)
-    }, 500)
+    // Start with no selection
+    setSelectedJob(null)
+    // Loading is handled by fetchJobsFromDatabase
 
     // Detect mobile device
     const checkMobileDevice = () => {
@@ -1154,10 +1055,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       // Map status aliases to standard 5-category enum
       let mappedStatus = job.status
 
-      // Consolidate all offer-related statuses to 'offered'
-      if (['offer', 'offer_made', 'pending_offer'].includes(job.status)) {
-        mappedStatus = 'offered'
-      }
+      // Status is already normalized to 'offered'
 
       // Default unknown statuses to 'applied'
       if (!stats.hasOwnProperty(mappedStatus)) {
@@ -1172,10 +1070,8 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
   const getGeneralStats = () => {
     const totalApplications = jobs.length
-    const activeApplications = jobs.filter(job => ['applied', 'screening', 'interview'].includes(job.status) ||
-      ['offer', 'offer_made', 'pending_offer'].includes(job.status)).length
-    const hired = jobs.filter(job => job.status === 'offered' ||
-      ['offer', 'offer_made', 'pending_offer'].includes(job.status)).length
+    const activeApplications = jobs.filter(job => ['applied', 'screening', 'interview', 'offered'].includes(job.status)).length
+    const hired = jobs.filter(job => job.status === 'offered').length
     const rejected = jobs.filter(job => job.status === 'rejected').length
 
     return {
@@ -1190,6 +1086,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     return (
       <div style={{
         display: 'flex',
+        flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
         height: '100vh',
@@ -1197,7 +1094,13 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         color: '#000000',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}>
-        Loading...
+        <div>Loading jobs from database...</div>
+        <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
+          Jobs found: {jobs.length}
+        </div>
+        <div style={{ marginTop: '5px', fontSize: '12px', color: '#999' }}>
+          Debug: {JSON.stringify({loading, jobsLength: jobs.length}, null, 2)}
+        </div>
       </div>
     )
   }
@@ -3212,7 +3115,6 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                       position: 'absolute',
                       top: '100%',
                       left: '0',
-                      right: '0',
                       backgroundColor: '#ffffff',
                       border: '1px solid #000000',
                       borderRadius: '4px',
@@ -3222,8 +3124,10 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                       zIndex: 1000,
                       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
                       marginTop: '8px',
-                      maxHeight: '200px',
-                      overflowY: 'auto'
+                      width: '300px',
+                      maxHeight: '400px',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap'
                     }}>
                       <strong>Full Job Description:</strong>
                       <br />
@@ -3256,7 +3160,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                         const isRejection = historyEntry.status === 'rejected'
                         const getStatusText = (entry: any) => {
                           if (entry.status === 'rejected') {
-                            return `Rejection: ${statusLabels[selectedJob.rejectedAt as keyof typeof statusLabels]} → Rejected`
+                            const rejectedFrom = selectedJob.rejectedAt
+                            const fromStatus = rejectedFrom && statusLabels[rejectedFrom as keyof typeof statusLabels]
+                              ? statusLabels[rejectedFrom as keyof typeof statusLabels]
+                              : rejectedFrom || 'Previous Stage'
+                            return `Rejection: ${fromStatus} → Rejected`
                           }
                           return `Status: ${statusLabels[entry.status as keyof typeof statusLabels]}`
                         }
@@ -3545,9 +3453,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                     const isCurrent = selectedJob.status === status
                     const isRejected = selectedJob.status === 'rejected' && selectedJob.rejectedAt === status
 
-                    // Find the corresponding date from statusHistory
-                    const statusHistory = selectedJob.statusHistory?.find(h => h.status === status)
-                    const hasDate = statusHistory && isActive
+                    // Find the corresponding date from progress data
+                    const progressEntry = selectedJob.progress?.find(p => p.stage === status)
+                    const hasDate = progressEntry && isActive
+                    // Find corresponding status history entry for operator/note info
+                    const historyEntry = selectedJob.statusHistory?.find(h => h.status === status)
 
                     return (
                       <React.Fragment key={status}>
@@ -3562,16 +3472,16 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                           }}
                           title={!isEditing ?
                             `Click to set status to ${statusLabels[status as keyof typeof statusLabels]}` :
-                            (hasDate ? `${statusLabels[status as keyof typeof statusLabels]} on ${new Date(statusHistory.date).toLocaleDateString()}` : undefined)
+                            (hasDate ? `${statusLabels[status as keyof typeof statusLabels]} on ${new Date(progressEntry.at).toLocaleDateString()}` : undefined)
                           }
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation()
                             if (isEditing && editForm) {
                               // In edit mode, update the draft timeline
                               handleFormChange('status', status)
                             } else if (!isEditing && selectedJob) {
                               // Outside edit mode, apply immediately
-                              updateJobStatus(selectedJob._id, status, `Status manually set to ${statusLabels[status as keyof typeof statusLabels]}`)
+                              await updateJobStatus(selectedJob._id, status, `Status manually set to ${statusLabels[status as keyof typeof statusLabels]}`)
                             }
                           }}
                           onMouseEnter={(e) => {
@@ -3650,7 +3560,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                               textAlign: 'center',
                               fontWeight: '500'
                             }}>
-                              {new Date(statusHistory.date).toLocaleDateString('en-US', {
+                              {new Date(progressEntry.at).toLocaleDateString('en-US', {
                                 month: 'short',
                                 day: 'numeric'
                               })}
@@ -3683,19 +3593,19 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                                 {statusLabels[status as keyof typeof statusLabels]}
                               </div>
                               <div style={{ fontSize: '10px', marginBottom: '2px' }}>
-                                {new Date(statusHistory.date).toLocaleDateString('en-US', {
+                                {new Date(progressEntry.at).toLocaleDateString('en-US', {
                                   weekday: 'short',
                                   month: 'short',
                                   day: 'numeric',
                                   year: 'numeric'
                                 })}
                               </div>
-                              {statusHistory.operator && (
+                              {historyEntry?.operator && (
                                 <div style={{ fontSize: '9px', color: '#cccccc' }}>
-                                  by {statusHistory.operator}
+                                  by {historyEntry.operator}
                                 </div>
                               )}
-                              {statusHistory.note && (
+                              {historyEntry?.note && (
                                 <div style={{
                                   fontSize: '9px',
                                   color: '#cccccc',
@@ -3704,7 +3614,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                                   borderTop: '1px solid #333333',
                                   paddingTop: '2px'
                                 }}>
-                                  {statusHistory.note}
+                                  {historyEntry.note}
                                 </div>
                               )}
                               {/* Arrow pointing down */}

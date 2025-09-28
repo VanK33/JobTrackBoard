@@ -596,22 +596,26 @@ async function startDatabaseServer(): Promise<void> {
     });
   });
 
-  // 404 handler
-  app.use((req, res) => {
-    res.status(404).json({
-      error: 'Not found',
-      path: req.path
-    });
-  });
-
   // Serve frontend static files in production
   if (process.env.NODE_ENV === 'production') {
-    const frontendPath = path.join(__dirname, '../dist');
+    const frontendPath = path.join(__dirname, '../frontend');
+    logger.info('Serving frontend static files', { frontendPath, __dirname });
+
+    // First serve static assets
     app.use(express.static(frontendPath));
 
-    // Handle client-side routing
+    // Handle client-side routing - catch all routes for SPA
     app.get('*', (req, res) => {
+      logger.info('Serving SPA for route', { path: req.path });
       res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+  } else {
+    // 404 handler for API-only routes in development
+    app.use((req, res) => {
+      res.status(404).json({
+        error: 'Not found',
+        path: req.path
+      });
     });
   }
 

@@ -1095,12 +1095,16 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}>
         <div>Loading jobs from database...</div>
-        <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
-          Jobs found: {jobs.length}
-        </div>
-        <div style={{ marginTop: '5px', fontSize: '12px', color: '#999' }}>
-          Debug: {JSON.stringify({loading, jobsLength: jobs.length}, null, 2)}
-        </div>
+        {process.env.NODE_ENV === 'development' && (
+          <>
+            <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
+              Jobs found: {jobs.length}
+            </div>
+            <div style={{ marginTop: '5px', fontSize: '12px', color: '#999' }}>
+              Debug: {JSON.stringify({loading, jobsLength: jobs.length}, null, 2)}
+            </div>
+          </>
+        )}
       </div>
     )
   }

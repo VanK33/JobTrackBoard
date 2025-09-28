@@ -14,6 +14,8 @@
     "dev:platform": "npm run dev --workspace=@platform/core",
     "dev:modules": "npm run dev --workspace=@modules/job-tracker-basic",
     "build": "npm run build --workspaces",
+    "build:prod": "npm run build --workspace=@platform/core",
+    "start": "npm start --workspace=@platform/core",
     "test": "npm run test --workspaces",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "type-check": "tsc --noEmit"

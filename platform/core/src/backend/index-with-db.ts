@@ -604,8 +604,19 @@ async function startDatabaseServer(): Promise<void> {
     });
   });
 
+  // Serve frontend static files in production
+  if (process.env.NODE_ENV === 'production') {
+    const frontendPath = path.join(__dirname, '../dist');
+    app.use(express.static(frontendPath));
+
+    // Handle client-side routing
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+  }
+
   // Start server
-  const port = 3000;
+  const port = process.env.PORT || 3000;
   const server = app.listen(port, () => {
     logger.info('Database-enabled server started', { port, database: 'sqlite' });
   });

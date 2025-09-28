@@ -1,0 +1,16 @@
+{
+  "type": "postgresql",
+  "host": "",
+  "port": 5432,
+  "database": "",
+  "username": "",
+  "password": "",
+  "ssl": true,
+  "connectionString": "postgresql://postgres.urgmsorlmjbdwilxsaud:Bnknnkw4R9Zq4JJC@aws-1-us-west-1.pooler.supabase.com:6543/postgres",
+  "storage": {
+    "provider": "supabase",
+    "tempDir": "./temp-uploads",
+    "localStorageDir": "./uploads"
+  },
+  "savedAt": "2025-09-25T18:40:20.577Z"
+}

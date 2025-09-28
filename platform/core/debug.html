@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Backend Connection Test</title>
+</head>
+<body>
+    <h1>Connection Test</h1>
+    <button onclick="testConnection()">Test Backend Connection</button>
+    <div id="result"></div>
+
+    <script>
+        async function testConnection() {
+            const result = document.getElementById('result');
+            result.innerHTML = 'Testing...';
+
+            try {
+                console.log('Testing backend connection...');
+                const response = await fetch('http://localhost:3000/api/jobs');
+                console.log('Response:', response);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Data:', data);
+                    result.innerHTML = `Success! Found ${data.length} jobs:<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    result.innerHTML = `Error: ${response.status} ${response.statusText}`;
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                result.innerHTML = `Fetch failed: ${error.message}`;
+            }
+        }
+
+        // Auto-test on page load
+        window.onload = () => {
+            console.log('Debug page loaded');
+            testConnection();
+        };
+    </script>
+</body>
+</html>

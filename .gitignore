@@ -136,6 +136,11 @@ playwright/.cache/
 # Session files
 .session
 
+# claude
+.claude
+memory.md
+output.md
+
 # Lock files (uncomment if you want to ignore them)
 # package-lock.json
 # yarn.lock

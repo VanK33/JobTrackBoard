@@ -7,7 +7,6 @@ interface DatabaseSettingsProps {
 }
 
 const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) => {
-  const [selectedProvider, setSelectedProvider] = useState<DatabaseProvider | null>(null)
   const [config, setConfig] = useState<DatabaseConfig>({
     type: 'postgresql',
     host: '',
@@ -27,6 +26,8 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [useConnectionString, setUseConnectionString] = useState(false)
+  const [savedConnectionString, setSavedConnectionString] = useState('')
+  const [connectionStringHistory, setConnectionStringHistory] = useState<string[]>([])
   const [migrationStatus, setMigrationStatus] = useState<{
     isRunning: boolean;
     completed: boolean;
@@ -42,6 +43,23 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     errors: [],
     summary: ''
   })
+
+  // Utility function to parse connection string and detect database type
+  const parseConnectionString = (connectionString: string): DatabaseConfig['type'] | null => {
+    if (!connectionString) return null
+
+    const lowerCase = connectionString.toLowerCase()
+    if (lowerCase.startsWith('postgresql://') || lowerCase.startsWith('postgres://')) {
+      return 'postgresql'
+    }
+    if (lowerCase.startsWith('mysql://')) {
+      return 'mysql'
+    }
+    if (lowerCase.startsWith('mongodb://') || lowerCase.startsWith('mongodb+srv://')) {
+      return 'mongodb'
+    }
+    return null
+  }
 
   // Recommended database providers
   const providers: DatabaseProvider[] = [
@@ -80,46 +98,124 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
       signupUrl: 'https://railway.app',
       docsUrl: 'https://docs.railway.app/databases/postgresql',
       type: 'postgresql'
-    },
-    {
-      id: 'mongodb-atlas',
-      name: 'MongoDB Atlas',
-      description: 'Document database for flexible data structures',
-      freeLimit: '512MB storage',
-      setupComplexity: 'Medium',
-      recommendedFor: ['NoSQL preference', 'Document data'],
-      logo: 'MONGO',
-      signupUrl: 'https://cloud.mongodb.com',
-      docsUrl: 'https://docs.atlas.mongodb.com/getting-started/',
-      type: 'mongodb'
     }
   ]
 
-  // Load saved config
+  // Load saved config from both localStorage and server
   useEffect(() => {
-    const savedConfig = localStorage.getItem('databaseConfig')
-    if (savedConfig) {
+    const loadConfig = async () => {
+      // Load connection string history
+      const historyKey = 'databaseConnectionHistory'
+      const savedHistory = localStorage.getItem(historyKey)
+      let history: string[] = []
+      if (savedHistory) {
+        try {
+          history = JSON.parse(savedHistory)
+          setConnectionStringHistory(history)
+        } catch (error) {
+          console.warn('Failed to load connection string history:', error)
+        }
+      }
+
       try {
-        const parsed = JSON.parse(savedConfig)
-        setConfig(parsed)
-        if (parsed.connectionString) {
-          setUseConnectionString(true)
+        // First try to load from server
+        const response = await fetch('/api/database/config')
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.config) {
+            setConfig(result.config)
+            if (result.config.connectionString) {
+              setUseConnectionString(true)
+              setSavedConnectionString(result.config.connectionString)
+            } else if (history.length > 0) {
+              // If server has no connection string but we have history, use the most recent
+              setSavedConnectionString(history[0])
+            }
+            // Sync to localStorage
+            localStorage.setItem('databaseConfig', JSON.stringify(result.config))
+            return
+          }
         }
       } catch (error) {
-        console.error('Failed to load database config:', error)
+        console.warn('Failed to load config from server, trying localStorage:', error)
+      }
+
+      // Fallback to localStorage
+      const savedConfig = localStorage.getItem('databaseConfig')
+      if (savedConfig) {
+        try {
+          const parsed = JSON.parse(savedConfig)
+          setConfig(parsed)
+          if (parsed.connectionString) {
+            setUseConnectionString(true)
+            setSavedConnectionString(parsed.connectionString)
+          } else if (history.length > 0) {
+            // If localStorage has no connection string but we have history, use the most recent
+            setSavedConnectionString(history[0])
+          }
+        } catch (error) {
+          console.error('Failed to load database config from localStorage:', error)
+        }
+      } else if (history.length > 0) {
+        // No saved config but we have history, use the most recent connection string
+        setSavedConnectionString(history[0])
       }
     }
+
+    loadConfig()
   }, [])
 
   const handleConfigChange = (field: keyof DatabaseConfig, value: any) => {
-    setConfig(prev => ({
-      ...prev,
-      [field]: value
-    }))
+    setConfig(prev => {
+      const newConfig = {
+        ...prev,
+        [field]: value
+      }
+
+      // Auto-detect database type from connection string
+      if (field === 'connectionString' && useConnectionString) {
+        const detectedType = parseConnectionString(value)
+        if (detectedType) {
+          newConfig.type = detectedType
+        }
+        // Save the connection string for future use and update history
+        if (value) {
+          setSavedConnectionString(value)
+          // Update connection string history
+          setConnectionStringHistory(prev => {
+            const newHistory = [value, ...prev.filter(s => s !== value)].slice(0, 5) // Keep last 5
+            localStorage.setItem('databaseConnectionHistory', JSON.stringify(newHistory))
+            return newHistory
+          })
+        }
+      }
+
+      return newConfig
+    })
   }
 
-  const saveConfig = () => {
-    localStorage.setItem('databaseConfig', JSON.stringify(config))
+  const saveConfig = async () => {
+    try {
+      const response = await fetch('/api/database/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(config)
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        // Save to localStorage for persistence
+        localStorage.setItem('databaseConfig', JSON.stringify(config))
+        alert('Database configuration saved successfully! The system has switched to your database.')
+      } else {
+        alert(`Failed to save configuration: ${result.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      alert(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   const testConnection = async () => {
@@ -193,14 +289,6 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     }
   }
 
-  const selectProvider = (provider: DatabaseProvider) => {
-    setSelectedProvider(provider)
-    setConfig(prev => ({
-      ...prev,
-      type: provider.type,
-      port: provider.type === 'postgresql' ? 5432 : provider.type === 'mysql' ? 3306 : 27017
-    }))
-  }
 
   const runDataMigration = async () => {
     setMigrationStatus(prev => ({ ...prev, isRunning: true, errors: [] }))
@@ -490,8 +578,19 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
               fontWeight: '600',
               color: '#111827'
             }}>
-              Recommended Database Providers
+              Recommended Database Providers (PostgreSQL Only)
             </h2>
+            <p style={{
+              margin: '0 0 20px 0',
+              fontSize: '14px',
+              color: '#6b7280',
+              backgroundColor: '#f0f9ff',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              border: '1px solid #e0f2fe'
+            }}>
+              <strong>Note:</strong> This project is designed for Supabase by default. If you want to extend support for other databases, you can implement it yourself.
+            </p>
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -500,14 +599,11 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
               {providers.map(provider => (
                 <div
                   key={provider.id}
-                  onClick={() => selectProvider(provider)}
                   style={{
-                    border: selectedProvider?.id === provider.id ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                    border: '1px solid #e5e7eb',
                     borderRadius: '8px',
                     padding: '16px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    backgroundColor: selectedProvider?.id === provider.id ? '#eff6ff' : 'white'
+                    backgroundColor: 'white'
                   }}
                 >
                   <div style={{
@@ -625,7 +721,41 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
               <input
                 type="checkbox"
                 checked={useConnectionString}
-                onChange={(e) => setUseConnectionString(e.target.checked)}
+                onChange={(e) => {
+                  const checked = e.target.checked
+                  setUseConnectionString(checked)
+
+                  if (checked) {
+                    // When enabling connection string, restore saved connection string if available
+                    if (savedConnectionString) {
+                      const detectedType = parseConnectionString(savedConnectionString)
+                      setConfig(prev => ({
+                        ...prev,
+                        connectionString: savedConnectionString,
+                        type: detectedType || 'postgresql'
+                      }))
+                    } else if (config.connectionString) {
+                      // If no saved connection string, use current one
+                      const detectedType = parseConnectionString(config.connectionString)
+                      if (detectedType) {
+                        setConfig(prev => ({ ...prev, type: detectedType }))
+                      }
+                    } else {
+                      // Set default to PostgreSQL when using connection string
+                      setConfig(prev => ({ ...prev, type: 'postgresql' }))
+                    }
+                  } else {
+                    // When disabling connection string, save current one and clear it
+                    if (config.connectionString) {
+                      setSavedConnectionString(config.connectionString)
+                    }
+                    setConfig(prev => ({
+                      ...prev,
+                      connectionString: '',
+                      type: 'postgresql'
+                    }))
+                  }
+                }}
               />
               <span style={{ fontSize: '14px', color: '#374151' }}>
                 Use connection string (recommended)
@@ -666,6 +796,44 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
               }}>
                 Copy the complete connection string from your database provider
               </p>
+
+              {/* Connection String History */}
+              {connectionStringHistory.length > 0 && (
+                <div style={{ marginTop: '8px' }}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: '#6b7280',
+                    marginBottom: '4px'
+                  }}>
+                    Recent Connection Strings:
+                  </label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleConfigChange('connectionString', e.target.value)
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '6px 8px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      backgroundColor: '#f9fafb'
+                    }}
+                  >
+                    <option value="">Select a previous connection...</option>
+                    {connectionStringHistory.map((connStr, index) => (
+                      <option key={index} value={connStr}>
+                        {connStr.substring(0, 50)}{connStr.length > 50 ? '...' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           ) : (
             /* Individual Fields */
@@ -692,8 +860,6 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
                   }}
                 >
                   <option value="postgresql">PostgreSQL</option>
-                  <option value="mysql">MySQL</option>
-                  <option value="mongodb">MongoDB</option>
                 </select>
               </div>
 

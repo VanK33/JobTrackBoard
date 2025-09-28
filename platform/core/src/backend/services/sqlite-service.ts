@@ -16,6 +16,25 @@ export interface DatabaseConfig {
   ssl?: boolean;
   connectionString?: string;
   filePath?: string; // For SQLite
+  storage?: {
+    provider: 'supabase' | 'local' | 's3' | 'azure';
+    tempDir?: string;
+    localStorageDir?: string;
+    supabase?: {
+      url: string;
+      serviceKey: string;
+    };
+    s3?: {
+      bucket: string;
+      region: string;
+      accessKey: string;
+      secretKey: string;
+    };
+    azure?: {
+      connectionString: string;
+      containerName: string;
+    };
+  };
 }
 
 export interface JobRecord {
@@ -31,9 +50,35 @@ export interface JobRecord {
   responsibilities?: string;
   qualifications?: string;
   appliedAt?: string;
+  rejectedAt?: string;
   createdAt: string;
   updatedAt: string;
+  // Related data (loaded via joins)
+  files?: JobFileRecord[];
+  statusHistory?: StatusHistoryRecord[];
 }
+
+export interface JobFileRecord {
+  id: number;
+  jobId: number;
+  filename: string;
+  originalName: string;
+  fileSize?: number;
+  mimeType?: string;
+  filePath?: string;
+  fileType?: string;
+  uploadedAt: string;
+}
+
+export interface StatusHistoryRecord {
+  id: number;
+  jobId: number;
+  status: string;
+  changedAt: string;
+  operator?: string;
+  note?: string;
+}
+
 
 export class SQLiteService {
   private logger: Logger;
@@ -92,6 +137,7 @@ export class SQLiteService {
         responsibilities TEXT,
         qualifications TEXT,
         applied_at TEXT,
+        rejected_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
@@ -106,7 +152,34 @@ export class SQLiteService {
         file_size INTEGER,
         mime_type TEXT,
         file_path TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        file_type TEXT,
+        uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (job_id) REFERENCES jobs (id) ON DELETE CASCADE
+      )
+    `;
+
+    const createStatusHistoryTable = `
+      CREATE TABLE IF NOT EXISTS job_status_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        changed_at TEXT NOT NULL,
+        operator TEXT,
+        note TEXT,
+        FOREIGN KEY (job_id) REFERENCES jobs (id) ON DELETE CASCADE
+      )
+    `;
+
+    const createStageTimestampsTable = `
+      CREATE TABLE IF NOT EXISTS job_stage_timestamps (
+        job_id INTEGER PRIMARY KEY,
+        applied_at TEXT,
+        screening_at TEXT,
+        interview_at TEXT,
+        offered_at TEXT,
+        rejected_at TEXT,
+        rejected_from TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (job_id) REFERENCES jobs (id) ON DELETE CASCADE
       )
     `;
@@ -135,6 +208,8 @@ export class SQLiteService {
     try {
       this.db.run(createJobsTable);
       this.db.run(createFilesTable);
+      this.db.run(createStatusHistoryTable);
+      this.db.run(createStageTimestampsTable);
       this.db.run(createUsersTable);
       this.db.run(createConfigTable);
 
@@ -251,7 +326,7 @@ export class SQLiteService {
 
       while (stmt.step()) {
         const row = stmt.getAsObject();
-        jobs.push({
+        const job: JobRecord = {
           id: row.id as number,
           title: row.title as string,
           company: row.company as string,
@@ -264,9 +339,16 @@ export class SQLiteService {
           responsibilities: row.responsibilities as string,
           qualifications: row.qualifications as string,
           appliedAt: row.applied_at as string,
+          rejectedAt: row.rejected_at as string,
           createdAt: row.created_at as string,
           updatedAt: row.updated_at as string
-        });
+        };
+
+        // Load related data
+        job.files = await this.getJobFiles(job.id!);
+        job.statusHistory = await this.getJobStatusHistory(job.id!);
+
+        jobs.push(job);
       }
       stmt.free();
 
@@ -281,9 +363,42 @@ export class SQLiteService {
     if (!this.db) throw new Error('Database not initialized');
 
     const now = new Date().toISOString();
+
+    // Get current job status for status change detection
+    let currentStatus: string | null = null;
+    if (updates.status) {
+      const currentJobStmt = this.db.prepare("SELECT status FROM jobs WHERE id = ?");
+      currentJobStmt.run([id]);
+      if (currentJobStmt.step()) {
+        const row = currentJobStmt.getAsObject();
+        currentStatus = row.status as string;
+      }
+      currentJobStmt.free();
+    }
+
+    // Define valid fields that exist in SQLite table
+    // For now, focus on basic fields that can be directly mapped
+    const validFields = new Set(['title', 'company', 'location', 'status', 'notes', 'requirements', 'responsibilities', 'qualifications']);
+
+    // Field mapping from frontend to database
+    const fieldMapping: Record<string, string> = {
+      'jobDescription': 'description',
+      'jobUrl': 'url',
+      'appliedAt': 'applied_at'
+    };
+
     const setClause = Object.keys(updates)
-      .filter(key => key !== 'id' && key !== 'createdAt')
-      .map(key => `${key === 'appliedAt' ? 'applied_at' : key} = ?`)
+      .filter(key => {
+        // Skip internal fields
+        if (['id', '_id', 'createdAt', 'updatedAt'].includes(key)) return false;
+        // Skip fields that don't exist in database (like files, statusHistory)
+        if (!validFields.has(key) && !fieldMapping[key]) return false;
+        return true;
+      })
+      .map(key => {
+        const dbColumn = fieldMapping[key] || key;
+        return `${dbColumn} = ?`;
+      })
       .join(', ');
 
     if (!setClause) throw new Error('No fields to update');
@@ -294,7 +409,12 @@ export class SQLiteService {
 
     try {
       const values = Object.entries(updates)
-        .filter(([key]) => key !== 'id' && key !== 'createdAt')
+        .filter(([key]) => {
+          // Use same filtering logic as setClause
+          if (['id', '_id', 'createdAt', 'updatedAt'].includes(key)) return false;
+          if (!validFields.has(key) && !fieldMapping[key]) return false;
+          return true;
+        })
         .map(([, value]) => value);
 
       values.push(now, id);
@@ -302,14 +422,20 @@ export class SQLiteService {
       stmt.run(values);
       this.saveDatabase();
 
-      // Return updated job
+      // Smart status history recording - only if status actually changed
+      if (updates.status && currentStatus && updates.status !== currentStatus) {
+        this.recordStatusChangeIfNeeded(id, currentStatus, updates.status);
+      }
+
+      // Return updated job with related data
       const getStmt = this.db.prepare("SELECT * FROM jobs WHERE id = ?");
       getStmt.run([id]);
 
       if (getStmt.step()) {
         const row = getStmt.getAsObject();
         getStmt.free();
-        return {
+
+        const updatedJob = {
           id: row.id as number,
           title: row.title as string,
           company: row.company as string,
@@ -325,6 +451,19 @@ export class SQLiteService {
           createdAt: row.created_at as string,
           updatedAt: row.updated_at as string
         };
+
+        // Update stage timestamps if status changed
+        if (updates.status && currentStatus && updates.status !== currentStatus) {
+          this.updateStageTimestamp(updatedJob.id, currentStatus, updates.status);
+        }
+
+        // Load related data
+        (updatedJob as any).files = await this.getJobFiles(updatedJob.id);
+        (updatedJob as any).statusHistory = await this.getJobStatusHistory(updatedJob.id);
+        // Add progress data
+        (updatedJob as any).progress = this.getJobProgress(updatedJob.id);
+
+        return updatedJob;
       }
 
       return null;
@@ -333,6 +472,84 @@ export class SQLiteService {
       throw error;
     } finally {
       stmt.free();
+    }
+  }
+
+  // Smart status history recording with frequency control
+  private recordStatusChangeIfNeeded(
+    jobId: number,
+    fromStatus: string,
+    toStatus: string,
+    minIntervalMinutes: number = 5 // Default: don't record duplicate changes within 5 minutes
+  ): void {
+    if (!this.db) return;
+
+    const now = new Date();
+    const minTimeAgo = new Date(now.getTime() - minIntervalMinutes * 60 * 1000).toISOString();
+
+    // Check if we have a recent identical status change
+    const recentChangeStmt = this.db.prepare(`
+      SELECT id, changed_at
+      FROM job_status_history
+      WHERE job_id = ? AND status = ? AND changed_at > ?
+      ORDER BY changed_at DESC
+      LIMIT 1
+    `);
+
+    recentChangeStmt.run([jobId, toStatus, minTimeAgo]);
+    const hasRecentChange = recentChangeStmt.step();
+    recentChangeStmt.free();
+
+    if (hasRecentChange) {
+      console.log(`Skipping duplicate status change to ${toStatus} within ${minIntervalMinutes} minutes for job ${jobId}`);
+      return;
+    }
+
+    // Check the most recent status history entry
+    const lastHistoryStmt = this.db.prepare(`
+      SELECT status
+      FROM job_status_history
+      WHERE job_id = ?
+      ORDER BY changed_at DESC
+      LIMIT 1
+    `);
+
+    lastHistoryStmt.run([jobId]);
+    let lastRecordedStatus: string | null = null;
+
+    if (lastHistoryStmt.step()) {
+      const row = lastHistoryStmt.getAsObject();
+      lastRecordedStatus = row.status as string;
+    }
+    lastHistoryStmt.free();
+
+    // Only record if the new status is different from the last recorded status
+    if (lastRecordedStatus && lastRecordedStatus === toStatus) {
+      console.log(`Skipping duplicate status recording: ${toStatus} already recorded for job ${jobId}`);
+      return;
+    }
+
+    // Record the status change
+    const insertStmt = this.db.prepare(`
+      INSERT INTO job_status_history (
+        job_id, status, changed_at, operator, note
+      ) VALUES (?, ?, ?, ?, ?)
+    `);
+
+    try {
+      insertStmt.run([
+        jobId,
+        toStatus,
+        now.toISOString(),
+        'User',
+        `Status changed from ${fromStatus} to ${toStatus}`
+      ]);
+
+      console.log(`Status change recorded: ${fromStatus} → ${toStatus} for job ${jobId}`);
+    } catch (error) {
+      console.error('Failed to record status change:', error);
+    } finally {
+      insertStmt.free();
     }
   }
 
@@ -386,6 +603,380 @@ export class SQLiteService {
       this.logger.error('Failed to get stats', { error: error.message });
       throw error;
     }
+  }
+
+  async migrateJobs(jobs: any[]): Promise<{ imported: number; errors: string[] }> {
+    let imported = 0
+    const errors: string[] = []
+
+    for (const job of jobs) {
+      try {
+        await this.createJob(job)
+        imported++
+      } catch (error: any) {
+        errors.push(`Failed to import job "${job.title}": ${error.message}`)
+      }
+    }
+
+    return { imported, errors }
+  }
+
+  async getJobFiles(jobId: number): Promise<JobFileRecord[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("SELECT * FROM job_files WHERE job_id = ?");
+      const files: JobFileRecord[] = [];
+
+      stmt.run([jobId]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        files.push({
+          id: row.id as number,
+          jobId: row.job_id as number,
+          filename: row.filename as string,
+          originalName: row.original_name as string,
+          fileSize: row.file_size as number,
+          mimeType: row.mime_type as string,
+          filePath: row.file_path as string,
+          fileType: row.file_type as string,
+          uploadedAt: row.uploaded_at as string
+        });
+      }
+      stmt.free();
+
+      return files;
+    } catch (error) {
+      this.logger.error('Failed to get job files', { error: error.message });
+      return [];
+    }
+  }
+
+  async getJobStatusHistory(jobId: number): Promise<StatusHistoryRecord[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("SELECT * FROM job_status_history WHERE job_id = ? ORDER BY changed_at DESC");
+      const history: StatusHistoryRecord[] = [];
+
+      stmt.run([jobId]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        history.push({
+          id: row.id as number,
+          jobId: row.job_id as number,
+          status: row.status as string,
+          changedAt: row.changed_at as string,
+          operator: row.operator as string,
+          note: row.note as string
+        });
+      }
+      stmt.free();
+
+      return history;
+    } catch (error) {
+      this.logger.error('Failed to get job status history', { error: error.message });
+      return [];
+    }
+  }
+
+
+  async addJobFile(fileData: any): Promise<JobFileRecord> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO job_files (
+          job_id, filename, original_name, file_size, mime_type,
+          file_path, file_type, uploaded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      stmt.run([
+        fileData.jobId,
+        fileData.filename,
+        fileData.originalName,
+        fileData.fileSize,
+        fileData.mimeType,
+        fileData.filePath,
+        fileData.fileType,
+        fileData.uploadedAt
+      ]);
+
+      const insertId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0] as number;
+      stmt.free();
+
+      // Return the created file record
+      return {
+        id: insertId,
+        jobId: fileData.jobId,
+        filename: fileData.filename,
+        originalName: fileData.originalName,
+        fileSize: fileData.fileSize,
+        mimeType: fileData.mimeType,
+        filePath: fileData.filePath,
+        fileType: fileData.fileType,
+        uploadedAt: fileData.uploadedAt
+      };
+    } catch (error) {
+      this.logger.error('Failed to add job file', { error: error.message });
+      throw error;
+    }
+  }
+
+  async getJobFile(fileId: number): Promise<JobFileRecord | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("SELECT * FROM job_files WHERE id = ?");
+      stmt.run([fileId]);
+
+      if (stmt.step()) {
+        const row = stmt.getAsObject();
+        stmt.free();
+        return {
+          id: row.id as number,
+          jobId: row.job_id as number,
+          filename: row.filename as string,
+          originalName: row.original_name as string,
+          fileSize: row.file_size as number,
+          mimeType: row.mime_type as string,
+          filePath: row.file_path as string,
+          fileType: row.file_type as string,
+          uploadedAt: row.uploaded_at as string
+        };
+      }
+
+      stmt.free();
+      return null;
+    } catch (error) {
+      this.logger.error('Failed to get job file', { error: error.message });
+      return null;
+    }
+  }
+
+  async deleteJobFile(fileId: number): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("DELETE FROM job_files WHERE id = ?");
+      stmt.run([fileId]);
+      const changes = this.db.getRowsModified();
+      stmt.free();
+
+      return changes > 0;
+    } catch (error) {
+      this.logger.error('Failed to delete job file', { error: error.message });
+      return false;
+    }
+  }
+
+  // Status History operations
+  async addStatusHistory(historyEntry: any): Promise<any> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO job_status_history (
+          job_id, status, changed_at, operator, note
+        ) VALUES (?, ?, ?, ?, ?)
+      `);
+
+      stmt.run([
+        historyEntry.jobId,
+        historyEntry.status,
+        historyEntry.changedAt,
+        historyEntry.operator,
+        historyEntry.note
+      ]);
+
+      const insertId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0] as number;
+      stmt.free();
+
+      // Return the created status history record
+      return {
+        id: insertId,
+        jobId: historyEntry.jobId,
+        status: historyEntry.status,
+        changedAt: historyEntry.changedAt,
+        operator: historyEntry.operator,
+        note: historyEntry.note
+      };
+    } catch (error) {
+      this.logger.error('Failed to add status history', { error: error.message });
+      throw error;
+    }
+  }
+
+  async getStatusHistory(jobId: number): Promise<any[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("SELECT * FROM job_status_history WHERE job_id = ? ORDER BY changed_at DESC");
+      const history: any[] = [];
+
+      stmt.run([jobId]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        history.push({
+          id: row.id as number,
+          jobId: row.job_id as number,
+          status: row.status as string,
+          changedAt: row.changed_at as string,
+          operator: row.operator as string,
+          note: row.note as string
+        });
+      }
+      stmt.free();
+
+      return history;
+    } catch (error) {
+      this.logger.error('Failed to get status history', { error: error.message });
+      return [];
+    }
+  }
+
+  async deleteStatusHistory(historyId: number): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("DELETE FROM job_status_history WHERE id = ?");
+      stmt.run([historyId]);
+      const changes = this.db.getRowsModified();
+      stmt.free();
+
+      this.saveDatabase();
+      return changes > 0;
+    } catch (error) {
+      this.logger.error('Failed to delete status history', { error: error.message });
+      return false;
+    }
+  }
+
+  // Stage Timestamps operations
+  getStageTimestamps(jobId: number): any {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare("SELECT * FROM job_stage_timestamps WHERE job_id = ?");
+      stmt.run([jobId]);
+
+      if (stmt.step()) {
+        const row = stmt.getAsObject();
+        stmt.free();
+        return {
+          job_id: row.job_id,
+          applied_at: row.applied_at,
+          screening_at: row.screening_at,
+          interview_at: row.interview_at,
+          offered_at: row.offered_at,
+          rejected_at: row.rejected_at,
+          rejected_from: row.rejected_from
+        };
+      } else {
+        stmt.free();
+        return {
+          job_id: jobId,
+          applied_at: null,
+          screening_at: null,
+          interview_at: null,
+          offered_at: null,
+          rejected_at: null,
+          rejected_from: null
+        };
+      }
+    } catch (error) {
+      this.logger.error('Failed to get stage timestamps', { error: error.message });
+      return {
+        job_id: jobId,
+        applied_at: null,
+        screening_at: null,
+        interview_at: null,
+        offered_at: null,
+        rejected_at: null,
+        rejected_from: null
+      };
+    }
+  }
+
+  updateStageTimestamp(jobId: number, currentStatus: string, newStatus: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const timestamps = this.getStageTimestamps(jobId);
+      const now = new Date().toISOString();
+
+      // Prepare update fields
+      let updateParts: string[] = [];
+      let values: any[] = [];
+
+      // Only set timestamp if it's the first time reaching this stage
+      if (newStatus === 'applied' && !timestamps.applied_at) {
+        updateParts.push('applied_at = ?');
+        values.push(now);
+      } else if (newStatus === 'screening' && !timestamps.screening_at) {
+        updateParts.push('screening_at = ?');
+        values.push(now);
+      } else if (newStatus === 'interview' && !timestamps.interview_at) {
+        updateParts.push('interview_at = ?');
+        values.push(now);
+      } else if (newStatus === 'offered' && !timestamps.offered_at) {
+        updateParts.push('offered_at = ?', 'rejected_at = NULL', 'rejected_from = NULL');
+        values.push(now);
+      } else if (newStatus === 'rejected') {
+        updateParts.push('rejected_at = ?', 'rejected_from = ?', 'offered_at = NULL');
+        values.push(now, currentStatus);
+      }
+
+      // Always update the updated_at timestamp
+      updateParts.push('updated_at = ?');
+      values.push(now);
+
+      if (updateParts.length > 1) { // More than just updated_at
+        // Try insert first, then update if exists
+        try {
+          const insertStmt = this.db.prepare(`
+            INSERT INTO job_stage_timestamps (job_id, ${updateParts.join(', ')})
+            VALUES (?, ${updateParts.map(() => '?').join(', ')})
+          `);
+          insertStmt.run([jobId, ...values]);
+          insertStmt.free();
+        } catch (insertError) {
+          // If insert fails, do update
+          const updateStmt = this.db.prepare(`
+            UPDATE job_stage_timestamps SET ${updateParts.join(', ')} WHERE job_id = ?
+          `);
+          updateStmt.run([...values, jobId]);
+          updateStmt.free();
+        }
+      }
+
+      this.saveDatabase();
+    } catch (error) {
+      this.logger.error('Failed to update stage timestamp', { error: error.message });
+    }
+  }
+
+  getJobProgress(jobId: number): Array<{stage: string, at: string}> {
+    const timestamps = this.getStageTimestamps(jobId);
+    const progress: Array<{stage: string, at: string}> = [];
+
+    if (timestamps.applied_at) {
+      progress.push({stage: 'applied', at: timestamps.applied_at});
+    }
+    if (timestamps.screening_at) {
+      progress.push({stage: 'screening', at: timestamps.screening_at});
+    }
+    if (timestamps.interview_at) {
+      progress.push({stage: 'interview', at: timestamps.interview_at});
+    }
+    if (timestamps.offered_at) {
+      progress.push({stage: 'offered', at: timestamps.offered_at});
+    } else if (timestamps.rejected_at) {
+      progress.push({stage: 'rejected', at: timestamps.rejected_at});
+    }
+
+    return progress;
   }
 
   async close(): Promise<void> {

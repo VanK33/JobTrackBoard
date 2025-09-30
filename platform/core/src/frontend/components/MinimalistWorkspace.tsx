@@ -1,3 +1,4 @@
+import { apiFetch } from "../utils/api-client"
 import React, { useState, useEffect } from 'react'
 
 interface Job {
@@ -85,7 +86,7 @@ const MinimalistWorkspace: React.FC = () => {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('/api/jobs')
+      const response = await apiFetch('/api/jobs')
       if (response.ok) {
         const data = await response.json()
         setJobs(data.data || [])

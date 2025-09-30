@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { apiFetch } from '../../utils/api-client'
 
 interface JobFile {
   id: string
@@ -76,7 +77,7 @@ const JobTrackerModule: React.FC = () => {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('/api/jobs')
+      const response = await apiFetch('/api/jobs')
       const data = await response.json()
       setJobs(data)
     } catch (error) {
@@ -100,7 +101,7 @@ const JobTrackerModule: React.FC = () => {
         qualifications: formData.qualifications.split('\n').filter(q => q.trim())
       }
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submitData)
@@ -167,7 +168,7 @@ const JobTrackerModule: React.FC = () => {
         const reader = new FileReader()
         reader.onload = async () => {
           const base64Data = reader.result?.toString().split(',')[1]
-          await fetch(`/api/jobs/${jobId}/files`, {
+          await apiFetch(`/api/jobs/${jobId}/files`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -191,7 +192,7 @@ const JobTrackerModule: React.FC = () => {
   const handleDelete = async (jobId: string) => {
     if (confirm('确定要删除这个工作申请吗？')) {
       try {
-        await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
+        await apiFetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
         await fetchJobs()
       } catch (error) {
         console.error('Failed to delete job:', error)
@@ -201,7 +202,7 @@ const JobTrackerModule: React.FC = () => {
 
   const handleStatusChange = async (jobId: string, newStatus: string) => {
     try {
-      await fetch(`/api/jobs/${jobId}/status`, {
+      await apiFetch(`/api/jobs/${jobId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })

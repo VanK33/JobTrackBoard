@@ -1,5 +1,6 @@
 /**
- * Backend server with real SQLite database integration
+ * Backend server with session-based database connections
+ * Each user's database config is stored in their browser and sent via headers
  */
 
 import 'dotenv/config';
@@ -10,9 +11,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Logger } from './utils/logger.js';
 import { DatabaseConfig } from './services/sqlite-service.js';
-import { databaseManager } from './services/database-manager.js';
 import { DataMapper } from './services/data-mapper.js';
-import { ConfigPersistenceService } from './services/config-persistence.js';
+import { ConnectionPoolManager } from './services/connection-pool-manager.js';
+import { extractDatabaseConfig, requireDatabaseConfig } from './middleware/database-config.js';
 import { supabaseStorage } from './services/supabase-client.js';
 import { StorageManager, StorageConfig } from './services/storage-manager.js';
 
@@ -56,43 +57,18 @@ const upload = multer({
 async function startDatabaseServer(): Promise<void> {
   const app = express();
 
-  // Load saved database configuration or use default SQLite
-  const savedConfig = ConfigPersistenceService.loadConfig();
-
-  // In production without saved config, do NOT auto-initialize database
-  // Force users to manually configure database on first visit
-  let shouldInitializeDB = true;
-  let initialConfig: DatabaseConfig;
-
-  if (process.env.NODE_ENV === 'production' && !savedConfig) {
-    shouldInitializeDB = false;
-    initialConfig = ConfigPersistenceService.getDefaultConfig();
-    logger.info('Production mode: Database not configured, waiting for user setup');
-  } else {
-    initialConfig = savedConfig || ConfigPersistenceService.getDefaultConfig();
-  }
-
-  logger.info('Starting database server with configuration', {
-    type: initialConfig.type,
-    host: initialConfig.host || 'local',
-    hasSavedConfig: !!savedConfig,
-    willInitialize: shouldInitializeDB
+  logger.info('Starting database server in session-based mode', {
+    mode: 'multi-tenant',
+    configSource: 'client-headers'
   });
 
-  if (shouldInitializeDB) {
-    await databaseManager.initialize(initialConfig);
-  }
-
-  // Initialize Storage Manager using config
-  const storageConfig: StorageConfig = {
-    provider: initialConfig.storage?.provider || 'supabase',
-    tempDir: initialConfig.storage?.tempDir || './temp-uploads',
-    localStorageDir: initialConfig.storage?.localStorageDir || './uploads',
-    supabase: initialConfig.storage?.supabase,
-    s3: initialConfig.storage?.s3,
-    azure: initialConfig.storage?.azure
+  // Initialize Storage Manager with default config
+  const defaultStorageConfig: StorageConfig = {
+    provider: 'supabase',
+    tempDir: './temp-uploads',
+    localStorageDir: './uploads'
   };
-  const storageManager = new StorageManager(storageConfig);
+  const storageManager = new StorageManager(defaultStorageConfig);
 
   // Initialize Supabase storage bucket (backward compatibility)
   await supabaseStorage.initializeBucket();
@@ -102,25 +78,28 @@ async function startDatabaseServer(): Promise<void> {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Health check
+  // Extract database config from request headers
+  app.use(extractDatabaseConfig);
+
+  // Health check (no auth required)
   app.get('/health', (req, res) => {
     res.json({
       status: 'healthy',
       platform: 'database_mode',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
-      database: databaseManager.getDatabaseType() || 'sqlite'
+      mode: 'session-based'
     });
   });
 
-  // Platform info endpoint
+  // Platform info endpoint (no auth required)
   app.get('/api/platform/info', (req, res) => {
     res.json({
       platform: {
         version: '1.0.0',
         status: 'running',
         initialized: true,
-        database: databaseManager.getDatabaseType() || 'sqlite'
+        mode: 'session-based'
       },
       enabledModules: [
         {
@@ -139,14 +118,14 @@ async function startDatabaseServer(): Promise<void> {
     });
   });
 
-  // Module endpoints
+  // Module endpoints (no auth required)
   app.get('/api/modules', (req, res) => {
     res.json([
       {
         id: 'job-tracker-basic',
         name: 'job-tracker-basic',
         displayName: 'Job Tracker with Database',
-        description: 'Complete job application management system with persistent SQLite database',
+        description: 'Complete job application management system with persistent database',
         version: '1.0.0',
         type: 'core-module',
         status: 'installed'
@@ -162,7 +141,7 @@ async function startDatabaseServer(): Promise<void> {
     res.json({ success: true, message: `Module ${req.params.moduleId} disabled` });
   });
 
-  // Database configuration endpoints
+  // Database configuration endpoints (config from request body for testing)
   app.post('/api/database/test', async (req, res) => {
     try {
       const config: DatabaseConfig = req.body;
@@ -171,8 +150,8 @@ async function startDatabaseServer(): Promise<void> {
         return res.status(400).json({ error: 'Database type is required' });
       }
 
-      // Test connection using database manager
-      const result = await databaseManager.testConnection(config);
+      // Test connection using connection pool manager
+      const result = await ConnectionPoolManager.testConnection(config);
 
       logger.info('Database connection test requested', {
         type: config.type,
@@ -198,63 +177,19 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.get('/api/database/config', (req, res) => {
-    try {
-      const currentConfig = databaseManager.getCurrentConfig();
-      const databaseType = databaseManager.getDatabaseType();
-
-      res.json({
-        success: true,
-        config: currentConfig,
-        type: databaseType,
-        hasPersistedConfig: ConfigPersistenceService.hasConfig(),
-        timestamp: new Date().toISOString()
-      });
-    } catch (error: any) {
-      logger.error('Failed to get current database configuration', { error: error.message });
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get current database configuration'
-      });
-    }
-  });
-
-  app.post('/api/database/save', async (req, res) => {
-    try {
-      const config: DatabaseConfig = req.body;
-
-      // Set the new database configuration
-      await databaseManager.setDatabaseConfig(config);
-
-      // Persist configuration to file
-      ConfigPersistenceService.saveConfig(config);
-
-      logger.info('Database configuration saved and connected', {
-        type: config.type,
-        host: config.host || 'local'
-      });
-
-      res.json({
-        success: true,
-        message: 'Database configuration saved and connected successfully',
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error: any) {
-      logger.error('Failed to save database configuration', { error: error.message });
-      res.status(500).json({
-        success: false,
-        error: 'Failed to save database configuration'
-      });
-    }
-  });
-
   app.post('/api/database/initialize', async (req, res) => {
     try {
-      // Initialize the database and create tables using current configuration
-      await databaseManager.initialize();
+      const config: DatabaseConfig = req.dbConfig || req.body;
 
-      logger.info('Database initialization completed');
+      if (!config) {
+        return res.status(400).json({ error: 'Database configuration required' });
+      }
+
+      // Get connection and initialize
+      const dbService = await ConnectionPoolManager.getConnection(config);
+      await dbService.initialize();
+
+      logger.info('Database initialization completed', { type: config.type });
 
       res.json({
         success: true,
@@ -272,10 +207,12 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  // Job management endpoints with real database
-  app.get('/api/jobs', async (req, res) => {
+  // Job management endpoints (require database config in headers)
+  app.get('/api/jobs', requireDatabaseConfig, async (req, res) => {
     try {
-      const jobs = await databaseManager.getJobs();
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
+      const jobs = await dbService.getJobs();
+
       // Convert backend job records to frontend format
       const frontendJobs = jobs.map(job => DataMapper.backendToFrontend(job));
       res.json(frontendJobs);
@@ -285,8 +222,10 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.post('/api/jobs', async (req, res) => {
+  app.post('/api/jobs', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
+
       // Convert frontend job data to backend format
       const frontendJobData = {
         ...req.body,
@@ -294,7 +233,7 @@ async function startDatabaseServer(): Promise<void> {
       };
 
       const backendJobData = DataMapper.frontendToBackend(frontendJobData);
-      const newJob = await databaseManager.createJob(backendJobData);
+      const newJob = await dbService.createJob(backendJobData as any);
 
       // Convert back to frontend format for response
       const frontendJob = DataMapper.backendToFrontend(newJob);
@@ -307,9 +246,10 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.get('/api/jobs/:id', async (req, res) => {
+  app.get('/api/jobs/:id', requireDatabaseConfig, async (req, res) => {
     try {
-      const jobs = await databaseManager.getJobs();
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
+      const jobs = await dbService.getJobs();
       const job = jobs.find(j => j.id === parseInt(req.params.id));
 
       if (job) {
@@ -325,15 +265,16 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.put('/api/jobs/:id', async (req, res) => {
+  app.put('/api/jobs/:id', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
       const frontendUpdates = req.body;
 
       // Convert frontend updates to backend format
       const backendUpdates = DataMapper.frontendToBackend(frontendUpdates);
 
-      const updatedJob = await databaseManager.updateJob(jobId.toString(), backendUpdates);
+      const updatedJob = await dbService.updateJob(jobId as any, backendUpdates);
 
       if (updatedJob) {
         // Convert back to frontend format for response
@@ -349,10 +290,11 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.delete('/api/jobs/:id', async (req, res) => {
+  app.delete('/api/jobs/:id', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
-      const success = await databaseManager.deleteJob(jobId);
+      const success = await dbService.deleteJob(jobId as any);
 
       if (success) {
         logger.info('Job deleted', { id: jobId });
@@ -367,8 +309,9 @@ async function startDatabaseServer(): Promise<void> {
   });
 
   // File upload endpoint
-  app.post('/api/jobs/:id/files', upload.single('file'), async (req, res) => {
+  app.post('/api/jobs/:id/files', requireDatabaseConfig, upload.single('file'), async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
       const file = req.file;
       const fileType = req.body.type || 'other';
@@ -378,9 +321,8 @@ async function startDatabaseServer(): Promise<void> {
       }
 
       // Upload to storage using StorageManager
-      // Note: multer diskStorage has already saved the file with a unique name
       const uploadResult = await storageManager.uploadFile(
-        file.path, // Path to the temp file created by multer
+        file.path,
         jobId.toString(),
         file.mimetype
       );
@@ -388,23 +330,23 @@ async function startDatabaseServer(): Promise<void> {
       // Create file record in database
       const fileData = {
         jobId: jobId,
-        filename: file.filename, // Use the filename generated by multer
+        filename: file.filename,
         originalName: file.originalname,
         fileSize: file.size,
         mimeType: file.mimetype,
-        filePath: uploadResult.path, // Store Supabase path instead of local path
+        filePath: uploadResult.path,
         fileType: fileType,
         uploadedAt: new Date().toISOString()
       };
 
-      const savedFile = await databaseManager.addJobFile(fileData);
-      const frontendFile = DataMapper.backendFileToFrontend(savedFile);
+      const savedFile = await dbService.addJobFile(fileData as any);
+      const frontendFile = DataMapper.backendFileToFrontend(savedFile as any);
 
-      logger.info('File uploaded to Supabase', {
+      logger.info('File uploaded', {
         jobId,
         filename: file.originalname,
         size: file.size,
-        supabasePath: uploadResult.path
+        path: uploadResult.path
       });
 
       res.json(frontendFile);
@@ -415,21 +357,22 @@ async function startDatabaseServer(): Promise<void> {
   });
 
   // File deletion endpoint
-  app.delete('/api/jobs/:id/files/:fileId', async (req, res) => {
+  app.delete('/api/jobs/:id/files/:fileId', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
       const fileId = parseInt(req.params.fileId);
 
       // Get file info before deletion
-      const fileInfo = await databaseManager.getJobFile(fileId);
+      const fileInfo = await dbService.getJobFile(fileId);
       if (!fileInfo || fileInfo.jobId !== jobId) {
         return res.status(404).json({ error: 'File not found' });
       }
 
-      // Delete file from storage using StorageManager
+      // Delete file from storage
       try {
         await storageManager.deleteFile(fileInfo.filePath);
-      } catch (error) {
+      } catch (error: any) {
         logger.warn('Failed to delete file from storage', {
           path: fileInfo.filePath,
           error: error.message
@@ -437,7 +380,7 @@ async function startDatabaseServer(): Promise<void> {
       }
 
       // Delete file record from database
-      const success = await databaseManager.deleteJobFile(fileId);
+      const success = await dbService.deleteJobFile(fileId);
 
       if (success) {
         logger.info('File deleted', { jobId, fileId, filename: fileInfo.originalName });
@@ -451,12 +394,13 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.patch('/api/jobs/:id/status', async (req, res) => {
+  app.patch('/api/jobs/:id/status', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
       const { status } = req.body;
 
-      const updatedJob = await databaseManager.updateJob(jobId.toString(), { status });
+      const updatedJob = await dbService.updateJob(jobId as any, { status } as any);
 
       if (updatedJob) {
         // Convert to frontend format
@@ -473,35 +417,11 @@ async function startDatabaseServer(): Promise<void> {
   });
 
   // Status History API endpoints
-  // DEPRECATED: Direct status history creation is now handled automatically by updateJob
-  // This endpoint is disabled to prevent duplicate/unfiltered status records
-  // app.post('/api/jobs/:id/status-history', async (req, res) => {
-  //   try {
-  //     const jobId = parseInt(req.params.id);
-  //     const { status, note, operator } = req.body;
-
-  //     const historyEntry = {
-  //       jobId: jobId,
-  //       status: status,
-  //       changedAt: new Date().toISOString(),
-  //       operator: operator || 'User',
-  //       note: note || `Status changed to ${status}`
-  //     };
-
-  //     const savedEntry = await databaseManager.addStatusHistory(historyEntry);
-
-  //     logger.info('Status history added', { jobId, status, operator });
-  //     res.json(savedEntry);
-  //   } catch (error: any) {
-  //     logger.error('Failed to add status history', { error: error.message });
-  //     res.status(500).json({ error: 'Failed to add status history' });
-  //   }
-  // });
-
-  app.get('/api/jobs/:id/status-history', async (req, res) => {
+  app.get('/api/jobs/:id/status-history', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
-      const history = await databaseManager.getStatusHistory(jobId);
+      const history = await dbService.getStatusHistory(jobId);
       res.json(history);
     } catch (error: any) {
       logger.error('Failed to get status history', { error: error.message });
@@ -509,12 +429,13 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.delete('/api/jobs/:id/status-history/:historyId', async (req, res) => {
+  app.delete('/api/jobs/:id/status-history/:historyId', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const jobId = parseInt(req.params.id);
       const historyId = parseInt(req.params.historyId);
 
-      const success = await databaseManager.deleteStatusHistory(historyId);
+      const success = await dbService.deleteStatusHistory(historyId);
 
       if (success) {
         logger.info('Status history deleted', { jobId, historyId });
@@ -528,9 +449,10 @@ async function startDatabaseServer(): Promise<void> {
     }
   });
 
-  app.get('/api/stats/overview', async (req, res) => {
+  app.get('/api/stats/overview', requireDatabaseConfig, async (req, res) => {
     try {
-      const stats = await databaseManager.getStats();
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
+      const stats = await dbService.getStats();
       res.json(stats);
     } catch (error: any) {
       logger.error('Failed to get stats', { error: error.message });
@@ -539,8 +461,9 @@ async function startDatabaseServer(): Promise<void> {
   });
 
   // Data migration endpoint
-  app.post('/api/data/migrate', async (req, res) => {
+  app.post('/api/data/migrate', requireDatabaseConfig, async (req, res) => {
     try {
+      const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
       const { jobs } = req.body;
 
       if (!Array.isArray(jobs)) {
@@ -548,11 +471,10 @@ async function startDatabaseServer(): Promise<void> {
       }
 
       let importedCount = 0;
-      let errors = [];
+      let errors: string[] = [];
 
       for (const jobData of jobs) {
         try {
-          const now = new Date().toISOString();
           const job = {
             title: jobData.title || 'Untitled',
             company: jobData.company || 'Unknown Company',
@@ -567,7 +489,7 @@ async function startDatabaseServer(): Promise<void> {
             appliedAt: jobData.appliedAt || jobData.applied_at
           };
 
-          await databaseManager.createJob(job);
+          await dbService.createJob(job as any);
           importedCount++;
         } catch (error: any) {
           errors.push(`Failed to import job "${jobData.title}": ${error.message}`);
@@ -637,14 +559,18 @@ async function startDatabaseServer(): Promise<void> {
   // Start server
   const port = process.env.PORT || 3000;
   const server = app.listen(port, () => {
-    logger.info('Database-enabled server started', { port, database: 'sqlite' });
+    logger.info('Session-based database server started', {
+      port,
+      mode: 'multi-tenant',
+      configSource: 'client-headers'
+    });
   });
 
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down gracefully');
     server.close(async () => {
-      await databaseManager.close();
+      await ConnectionPoolManager.closeAll();
       await storageManager.shutdown();
       process.exit(0);
     });

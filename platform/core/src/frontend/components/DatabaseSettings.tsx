@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { DatabaseConfig, DatabaseProvider, DatabaseStatus } from '../types'
 import { DataMigrationService } from '../utils/data-migration'
+import { apiClient, getStoredDatabaseConfig, storeDatabaseConfig } from '../utils/api-client'
 
 interface DatabaseSettingsProps {
   onNavigateBack?: () => void
@@ -101,7 +102,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     }
   ]
 
-  // Load saved config from both localStorage and server
+  // Load saved config from localStorage only
   useEffect(() => {
     const loadConfig = async () => {
       // Load connection string history
@@ -117,44 +118,15 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         }
       }
 
-      try {
-        // First try to load from server
-        const response = await fetch('/api/database/config')
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success && result.config) {
-            setConfig(result.config)
-            if (result.config.connectionString) {
-              setUseConnectionString(true)
-              setSavedConnectionString(result.config.connectionString)
-            } else if (history.length > 0) {
-              // If server has no connection string but we have history, use the most recent
-              setSavedConnectionString(history[0])
-            }
-            // Sync to localStorage
-            localStorage.setItem('databaseConfig', JSON.stringify(result.config))
-            return
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to load config from server, trying localStorage:', error)
-      }
-
-      // Fallback to localStorage
-      const savedConfig = localStorage.getItem('databaseConfig')
+      // Load config from localStorage
+      const savedConfig = getStoredDatabaseConfig()
       if (savedConfig) {
-        try {
-          const parsed = JSON.parse(savedConfig)
-          setConfig(parsed)
-          if (parsed.connectionString) {
-            setUseConnectionString(true)
-            setSavedConnectionString(parsed.connectionString)
-          } else if (history.length > 0) {
-            // If localStorage has no connection string but we have history, use the most recent
-            setSavedConnectionString(history[0])
-          }
-        } catch (error) {
-          console.error('Failed to load database config from localStorage:', error)
+        setConfig(savedConfig)
+        if (savedConfig.connectionString) {
+          setUseConnectionString(true)
+          setSavedConnectionString(savedConfig.connectionString)
+        } else if (history.length > 0) {
+          setSavedConnectionString(history[0])
         }
       } else if (history.length > 0) {
         // No saved config but we have history, use the most recent connection string
@@ -196,25 +168,11 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const saveConfig = async () => {
     try {
-      const response = await fetch('/api/database/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(config)
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        // Save to localStorage for persistence
-        localStorage.setItem('databaseConfig', JSON.stringify(config))
-        alert('Database configuration saved successfully! The system has switched to your database.')
-      } else {
-        alert(`Failed to save configuration: ${result.error || 'Unknown error'}`)
-      }
+      // Save to localStorage only - no server persistence
+      storeDatabaseConfig(config)
+      alert('Database configuration saved to browser! All API requests will use this database.')
     } catch (error) {
-      alert(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      alert(`Failed to save configuration: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -223,14 +181,10 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     setStatus(prev => ({ ...prev, error: undefined }))
 
     try {
-      const response = await fetch('/api/database/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(config)
-      })
+      // Temporarily store config to localStorage for testing
+      storeDatabaseConfig(config)
 
+      const response = await apiClient.post('/api/database/test', config)
       const result = await response.json()
 
       if (response.ok) {
@@ -239,7 +193,8 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           lastChecked: new Date().toISOString(),
           tablesInitialized: result.tablesInitialized
         })
-        saveConfig()
+        // Config already saved above
+        alert('Connection successful!')
       } else {
         setStatus({
           connected: false,
@@ -260,14 +215,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const initializeDatabase = async () => {
     try {
-      const response = await fetch('/api/database/initialize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(config)
-      })
-
+      const response = await apiClient.post('/api/database/initialize', config)
       const result = await response.json()
 
       if (response.ok) {
@@ -275,6 +223,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           ...prev,
           tablesInitialized: true
         }))
+        alert('Database initialized successfully!')
       } else {
         setStatus(prev => ({
           ...prev,

@@ -24,6 +24,16 @@ declare global {
  */
 export function extractDatabaseConfig(req: Request, res: Response, next: NextFunction): void {
   try {
+    // Skip static assets and health check
+    const isStaticAsset = req.path.startsWith('/assets/') ||
+                          req.path.startsWith('/storage/') ||
+                          req.path === '/health' ||
+                          req.path === '/favicon.ico'
+
+    if (isStaticAsset) {
+      return next()
+    }
+
     const configHeader = req.headers[DB_CONFIG_HEADER] as string
 
     if (configHeader) {
@@ -39,7 +49,8 @@ export function extractDatabaseConfig(req: Request, res: Response, next: NextFun
         hasConnectionString: !!config.connectionString,
         path: req.path
       })
-    } else {
+    } else if (req.path.startsWith('/api/')) {
+      // Only warn for API endpoints
       logger.warn('No database config in request headers', { path: req.path })
     }
   } catch (error: any) {

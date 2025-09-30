@@ -3,6 +3,7 @@ import ModuleStore from './components/ModuleStore'
 import Workspace from './components/Workspace'
 import MinimalistWorkspace from './components/MinimalistWorkspace'
 import JobDashboard from './components/JobDashboard'
+import { API_BASE_URL } from './config/api'
 import DatabaseSettings from './components/DatabaseSettings'
 import Header from './components/Header'
 import { ModuleInfo, InstalledModule } from './types'
@@ -23,13 +24,13 @@ function App() {
       console.log('📡 Fetching modules from backend...')
 
       // Check if backend is available first
-      const healthResponse = await fetch('http://localhost:3000/health')
+      const healthResponse = await fetch(`${API_BASE_URL}/health`)
       if (!healthResponse.ok) {
         throw new Error('Backend not available')
       }
 
       // 获取可用模块
-      const modulesResponse = await fetch('http://localhost:3000/api/modules')
+      const modulesResponse = await fetch(`${API_BASE_URL}/api/modules`)
       console.log('📦 Modules response:', modulesResponse.status)
 
       if (!modulesResponse.ok) {
@@ -40,7 +41,7 @@ function App() {
       console.log('📦 Modules data:', modules)
 
       // 获取平台信息（包含已安装模块）
-      const platformResponse = await fetch('http://localhost:3000/api/platform/info')
+      const platformResponse = await fetch(`${API_BASE_URL}/api/platform/info`)
       if (!platformResponse.ok) {
         throw new Error(`HTTP ${platformResponse.status}: ${platformResponse.statusText}`)
       }
@@ -69,7 +70,7 @@ function App() {
 
   const handleInstallModule = async (moduleId: string) => {
     try {
-      await fetch(`http://localhost:3000/api/modules/${moduleId}/enable`, { method: 'POST' })
+      await fetch(`${API_BASE_URL}/api/modules/${moduleId}/enable`, { method: 'POST' })
       await fetchModules() // 刷新状态
     } catch (error) {
       console.error('Failed to install module:', error)
@@ -78,7 +79,7 @@ function App() {
 
   const handleUninstallModule = async (moduleId: string) => {
     try {
-      await fetch(`http://localhost:3000/api/modules/${moduleId}/disable`, { method: 'POST' })
+      await fetch(`${API_BASE_URL}/api/modules/${moduleId}/disable`, { method: 'POST' })
       await fetchModules() // 刷新状态
     } catch (error) {
       console.error('Failed to uninstall module:', error)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { API_BASE_URL } from '../config/api'
 
 interface Job {
   _id: string
@@ -150,7 +151,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       setLoading(true)
 
       // First check if backend is available
-      const healthResponse = await fetch('http://localhost:3000/health', {
+      const healthResponse = await fetch(`${API_BASE_URL}/health`, {
         method: 'GET',
         signal: AbortSignal.timeout(5000) // 5 second timeout
       })
@@ -159,7 +160,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         throw new Error('Backend server is not available')
       }
 
-      const response = await fetch('http://localhost:3000/api/jobs', {
+      const response = await fetch(`${API_BASE_URL}/api/jobs`, {
         signal: AbortSignal.timeout(10000) // 10 second timeout
       })
 
@@ -226,7 +227,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
     try {
       // Call backend API to delete job
-      const response = await fetch(`http://localhost:3000/api/jobs/${jobId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
         method: 'DELETE'
       })
 
@@ -275,7 +276,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
     try {
       // API call to update job
-      const response = await fetch(`http://localhost:3000/api/jobs/${editForm._id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/jobs/${editForm._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -285,7 +286,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
       if (response.ok) {
         // Get the latest job data to ensure we have updated files
-        const freshJobResponse = await fetch(`http://localhost:3000/api/jobs/${editForm._id}`)
+        const freshJobResponse = await fetch(`${API_BASE_URL}/api/jobs/${editForm._id}`)
         if (freshJobResponse.ok) {
           const updatedJob = await freshJobResponse.json()
           const updatedJobs = jobs.map(job =>
@@ -383,7 +384,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
     try {
       // API call to create new job
-      const response = await fetch('http://localhost:3000/api/jobs', {
+      const response = await fetch(`${API_BASE_URL}/api/jobs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -408,7 +409,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
           await fetchJobsFromDatabase()
 
           // Find and select the newly created job from refreshed data
-          const refreshedJobs = await fetch('http://localhost:3000/api/jobs').then(r => r.json())
+          const refreshedJobs = await fetch(`${API_BASE_URL}/api/jobs`).then(r => r.json())
           const newJob = refreshedJobs.find((j: any) => j.id.toString() === createdJob.id.toString())
           if (newJob) {
             setSelectedJob({
@@ -648,7 +649,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       }
 
       // Start upload
-      xhr.open('POST', `http://localhost:3000/api/jobs/${jobId}/files`)
+      xhr.open('POST', `${API_BASE_URL}/api/jobs/${jobId}/files`)
       xhr.send(formData)
     })
   }
@@ -874,7 +875,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     // API call to persist status change to database
     try {
       // Update the job status - backend handles smart status history recording
-      const jobResponse = await fetch(`http://localhost:3000/api/jobs/${jobId}`, {
+      const jobResponse = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -934,7 +935,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   // Helper function to refresh job data from backend
   const refreshJobData = async (jobId: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/jobs/${jobId}`)
+      const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`)
       if (response.ok) {
         const freshJobData = await response.json()
         const refreshedJob: Job = {

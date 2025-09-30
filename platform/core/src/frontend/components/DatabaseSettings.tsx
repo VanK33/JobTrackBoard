@@ -168,8 +168,18 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const saveConfig = async () => {
     try {
+      // Clean config: when using connection string, clear individual fields
+      const cleanConfig = config.connectionString
+        ? {
+            type: config.type,
+            connectionString: config.connectionString,
+            ssl: config.ssl,
+            storage: config.storage
+          }
+        : config
+
       // Save to localStorage only - no server persistence
-      storeDatabaseConfig(config)
+      storeDatabaseConfig(cleanConfig)
       alert('Database configuration saved to browser! All API requests will use this database.')
     } catch (error) {
       alert(`Failed to save configuration: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -181,10 +191,20 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     setStatus(prev => ({ ...prev, error: undefined }))
 
     try {
-      // Temporarily store config to localStorage for testing
-      storeDatabaseConfig(config)
+      // Clean config: when using connection string, clear individual fields
+      const cleanConfig = config.connectionString
+        ? {
+            type: config.type,
+            connectionString: config.connectionString,
+            ssl: config.ssl,
+            storage: config.storage
+          }
+        : config
 
-      const response = await apiClient.post('/api/database/test', config)
+      // Temporarily store clean config to localStorage for testing
+      storeDatabaseConfig(cleanConfig)
+
+      const response = await apiClient.post('/api/database/test', cleanConfig)
       const result = await response.json()
 
       if (response.ok) {
@@ -215,7 +235,17 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const initializeDatabase = async () => {
     try {
-      const response = await apiClient.post('/api/database/initialize', config)
+      // Use clean config
+      const cleanConfig = config.connectionString
+        ? {
+            type: config.type,
+            connectionString: config.connectionString,
+            ssl: config.ssl,
+            storage: config.storage
+          }
+        : config
+
+      const response = await apiClient.post('/api/database/initialize', cleanConfig)
       const result = await response.json()
 
       if (response.ok) {

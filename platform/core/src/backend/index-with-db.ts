@@ -58,15 +58,30 @@ async function startDatabaseServer(): Promise<void> {
 
   // Load saved database configuration or use default SQLite
   const savedConfig = ConfigPersistenceService.loadConfig();
-  const initialConfig = savedConfig || ConfigPersistenceService.getDefaultConfig();
+
+  // In production without saved config, do NOT auto-initialize database
+  // Force users to manually configure database on first visit
+  let shouldInitializeDB = true;
+  let initialConfig: DatabaseConfig;
+
+  if (process.env.NODE_ENV === 'production' && !savedConfig) {
+    shouldInitializeDB = false;
+    initialConfig = ConfigPersistenceService.getDefaultConfig();
+    logger.info('Production mode: Database not configured, waiting for user setup');
+  } else {
+    initialConfig = savedConfig || ConfigPersistenceService.getDefaultConfig();
+  }
 
   logger.info('Starting database server with configuration', {
     type: initialConfig.type,
     host: initialConfig.host || 'local',
-    hasSavedConfig: !!savedConfig
+    hasSavedConfig: !!savedConfig,
+    willInitialize: shouldInitializeDB
   });
 
-  await databaseManager.initialize(initialConfig);
+  if (shouldInitializeDB) {
+    await databaseManager.initialize(initialConfig);
+  }
 
   // Initialize Storage Manager using config
   const storageConfig: StorageConfig = {

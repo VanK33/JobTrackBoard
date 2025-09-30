@@ -7,15 +7,28 @@ import { API_BASE_URL } from './config/api'
 import DatabaseSettings from './components/DatabaseSettings'
 import Header from './components/Header'
 import { ModuleInfo, InstalledModule } from './types'
+import { getStoredDatabaseConfig } from './utils/api-client'
 
 function App() {
   const [view, setView] = useState<'store' | 'workspace' | 'minimalist' | 'dashboard' | 'settings'>('dashboard')
   const [availableModules, setAvailableModules] = useState<ModuleInfo[]>([])
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([])
   const [loading, setLoading] = useState(true)
+  const [needsDatabaseSetup, setNeedsDatabaseSetup] = useState(false)
 
   useEffect(() => {
-    console.log('🚀 App component mounted, fetching modules...')
+    console.log('🚀 App component mounted, checking database config...')
+
+    // Check if database is configured
+    const dbConfig = getStoredDatabaseConfig()
+    if (!dbConfig) {
+      console.log('⚠️ No database configuration found, showing setup page')
+      setNeedsDatabaseSetup(true)
+      setLoading(false)
+      return
+    }
+
+    console.log('✅ Database config found, fetching modules...')
     fetchModules()
   }, [])
 
@@ -84,6 +97,23 @@ function App() {
     } catch (error) {
       console.error('Failed to uninstall module:', error)
     }
+  }
+
+  // Show database setup page if not configured
+  if (needsDatabaseSetup) {
+    return (
+      <DatabaseSettings
+        onNavigateBack={() => {
+          // After setup, check config and reload
+          const dbConfig = getStoredDatabaseConfig()
+          if (dbConfig) {
+            setNeedsDatabaseSetup(false)
+            setLoading(true)
+            fetchModules()
+          }
+        }}
+      />
+    )
   }
 
   if (loading) {

@@ -11,11 +11,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Logger } from './utils/logger.js';
 import { PATHS } from '../shared/config/paths.js';
-import { DatabaseConfig } from './services/sqlite-service.js';
-import { DataMapper } from './services/data-mapper.js';
-import { ConnectionPoolManager } from './services/connection-pool-manager.js';
+import { DatabaseConfig } from './database/sqlite-service.js';
+import { DataMapper } from './database/data-mapper.js';
+import { ConnectionPoolManager } from './database/connection-pool-manager.js';
 import { extractDatabaseConfig, requireDatabaseConfig } from './middleware/database-config.js';
-import { supabaseStorage } from './services/supabase-client.js';
+import { supabaseStorage } from './database/supabase-client.js';
 import { StorageManager, StorageConfig } from './services/storage-manager.js';
 
 const logger = new Logger('DatabaseServer');

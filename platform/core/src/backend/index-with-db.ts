@@ -10,6 +10,7 @@ import multer from 'multer';
 import fs from 'fs/promises';
 import path from 'path';
 import { Logger } from './utils/logger.js';
+import { PATHS } from '../shared/config/paths.js';
 import { DatabaseConfig } from './services/sqlite-service.js';
 import { DataMapper } from './services/data-mapper.js';
 import { ConnectionPoolManager } from './services/connection-pool-manager.js';
@@ -23,7 +24,7 @@ const logger = new Logger('DatabaseServer');
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
-      cb(null, './temp-uploads/');
+      cb(null, PATHS.TEMP_UPLOADS);
     },
     filename: (req, file, cb) => {
       // Use original filename without modification
@@ -65,8 +66,8 @@ async function startDatabaseServer(): Promise<void> {
   // Initialize Storage Manager with default config
   const defaultStorageConfig: StorageConfig = {
     provider: 'supabase',
-    tempDir: './temp-uploads',
-    localStorageDir: './uploads'
+    tempDir: PATHS.TEMP_UPLOADS,
+    localStorageDir: PATHS.STORAGE
   };
   const storageManager = new StorageManager(defaultStorageConfig);
 

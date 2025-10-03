@@ -1,306 +1,258 @@
-# Modular Job Tracker Platform
+# Job Tracker Application
 
-A truly modular job-tracking application with plug-and-play architecture. Unlike Excel or Airtable, this platform provides specialized functionality for job searching while allowing users to customize their experience through modules.
+A modern, full-stack job tracking application with session-based multi-tenant database architecture.
 
-> **🗄️ Database Support**: This project is designed for Supabase by default. If you want to extend support for other databases, you can implement it yourself.
+## 🏗️ Architecture
 
-## 🎯 Core Concept
+This is a **monorepo** organized with npm workspaces:
 
-The platform works like assembling a computer:
-- **Platform Core** = Motherboard (provides infrastructure)
-- **Modules** = Components that plug in (provide specific features)
-- **True Modularity** = Add/remove features without affecting the core system
+```
+job_seek_app/
+├── platform/core/          # Main application (backend + frontend)
+├── modules/                # Future: Pluggable modules
+├── shared/                 # Shared types and utilities
+└── tools/                  # Build and development tools
+```
 
-## 🏗️ Architecture Overview
+### Tech Stack
 
-### Platform Core ("The Motherboard")
-- **Module Manager**: Installs, enables, and manages module lifecycle
-- **Event Bus**: Enables modules to communicate without dependencies
-- **Data Service**: Provides isolated data storage for each module
-- **Auth Service**: Handles user authentication and permissions
-- **Storage Service**: Multi-provider file storage abstraction
+- **Backend**: Node.js + Express + TypeScript
+- **Frontend**: React 18 + Vite 5 + TypeScript
+- **Database**: PostgreSQL/Supabase (with SQL.js fallback)
+- **Storage**: Supabase Storage (with local fallback)
+- **Architecture**: Session-based multi-tenant
 
-### Available Modules
-
-#### Core Module: Basic Job Tracker (`job-tracker-basic`)
-- ✅ **Status**: Implemented
-- **Features**: 
-  - CRUD operations for job applications
-  - Company management
-  - Status tracking (interested → applied → interviewing → offered/rejected)
-  - Timeline tracking
-  - Statistics and analytics
-  - Search and filtering
-
-#### Future Modules (Planned)
-- **JD-Resume Comparison**: AI-powered job description analysis
-- **OCR Scanner**: Extract text from job posting images
-- **LinkedIn Integration**: Import jobs and contacts
-- **Interview Scheduler**: Calendar integration
-- **Salary Negotiation Tracker**: Compensation analysis
-- **Email Integration**: Auto-track application emails
-- **Analytics Dashboard**: Advanced reporting
-
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
+
 - Node.js 18+
-- PostgreSQL database (recommended: Supabase)
-- Redis (optional, for distributed events)
+- npm 9+
 
 ### Installation
 
-1. **Clone and setup**:
-   ```bash
-   git clone <repository>
-   cd job_seek_app
-   npm install
-   ```
+```bash
+# Install dependencies
+npm install
 
-2. **Environment Setup**:
-   ```bash
-   # Copy environment template
-   cp .env.example .env
+# Start development (runs backend + frontend)
+npm run dev
+```
 
-   # Configure database connection (example for Supabase)
-   DATABASE_URL=postgresql://user:password@host:5432/database
-   REDIS_URL=redis://localhost:6379  # Optional
-   JWT_SECRET=your-super-secret-key
-   ```
+The application will be available at:
+- Frontend: http://localhost:5173 (dev proxy to backend)
+- Backend API: http://localhost:3000
 
-3. **Build the platform**:
-   ```bash
-   npm run build
-   ```
+### Database Setup
 
-4. **Start the platform**:
-   ```bash
-   npm run dev
-   ```
+On first run, configure your database through the UI:
 
-The platform will start on `http://localhost:3000`
+1. Open http://localhost:5173
+2. Choose database type (SQL.js, PostgreSQL, or Supabase)
+3. Enter connection details
+4. Initialize database schema
 
-### API Endpoints
+Database configuration is stored in browser localStorage and sent via headers with each request.
 
-#### Platform Management
+## 📁 Project Structure
+
+```
+platform/core/
+├── src/
+│   ├── backend/           # Express backend
+│   │   ├── api/          # API route modules
+│   │   ├── database/     # Database services
+│   │   ├── middleware/   # Express middleware
+│   │   ├── services/     # Business logic
+│   │   └── utils/        # Utilities
+│   ├── frontend/         # React frontend
+│   │   ├── pages/        # Page components
+│   │   ├── components/   # Reusable components
+│   │   ├── services/     # API clients
+│   │   ├── hooks/        # React hooks
+│   │   └── utils/        # Utilities
+│   └── shared/           # Shared between backend/frontend
+│       └── config/       # Configuration
+├── dist/                 # Production build output
+└── .runtime/            # Runtime data (temp files, storage)
+```
+
+## 🔧 Development
+
+### Available Scripts
+
+```bash
+# Development
+npm run dev                    # Run backend + frontend concurrently
+npm run dev:backend           # Backend only
+npm run dev:frontend          # Frontend only
+
+# Building
+npm run build                 # Build all workspaces
+npm run build:prod           # Build for production
+
+# Quality
+npm run type-check           # TypeScript type checking
+npm run lint                 # ESLint
+npm test                     # Run tests
+
+# Production
+npm start                    # Start production server
+```
+
+### Backend API Routes
+
 - `GET /health` - Health check
-- `GET /api/platform/info` - Platform status and modules
-- `GET /api/modules` - List all modules
-- `POST /api/modules/:id/enable` - Enable a module
-- `POST /api/modules/:id/disable` - Disable a module
-
-#### Authentication
-- `POST /api/auth/register` - Create user account
-- `POST /api/auth/login` - Login
-
-#### Job Tracker (when enabled)
-- `GET /api/jobs` - List jobs with filtering
-- `POST /api/jobs` - Create new job
-- `GET /api/jobs/:id` - Get specific job
+- `GET /api/platform/info` - Platform information
+- `POST /api/database/test` - Test database connection
+- `POST /api/database/initialize` - Initialize database schema
+- `GET /api/jobs` - List jobs
+- `POST /api/jobs` - Create job
+- `GET /api/jobs/:id` - Get job
 - `PUT /api/jobs/:id` - Update job
 - `DELETE /api/jobs/:id` - Delete job
-- `PATCH /api/jobs/:id/status` - Update job status
-- `GET /api/stats/overview` - Get overview statistics
+- `GET /api/stats/overview` - Get statistics
 
-## 🔌 Module Development
+### Database Configuration
 
-### Creating a New Module
+The application supports multiple database backends:
 
-1. **Generate module structure**:
-   ```bash
-   mkdir -p modules/my-awesome-module/src/backend
-   ```
+#### SQL.js (Browser SQLite)
+- No setup required
+- Data stored in browser localStorage
+- Perfect for demo/testing
 
-2. **Create module manifest** (`module.json`):
-   ```json
-   {
-     "name": "my-awesome-module",
-     "version": "1.0.0",
-     "displayName": "My Awesome Module",
-     "description": "Does awesome things",
-     "type": "enhancement-module",
-     "dependencies": {
-       "modules": ["job-tracker-basic"],
-       "platform": ["data-service", "event-bus"]
-     },
-     "permissions": ["data:jobs:read"],
-     "exports": {
-       "backend": "./dist/backend/index.js"
-     }
-   }
-   ```
-
-3. **Implement module backend**:
-   ```typescript
-   import { ModuleBackend, ModuleContext } from '@shared/types';
-
-   export default class MyAwesomeModule implements ModuleBackend {
-     name = 'my-awesome-module';
-
-     async initialize(context: ModuleContext): Promise<void> {
-       // Module initialization
-     }
-
-     registerRoutes(router: ModuleRouter): void {
-       router.get('/awesome', this.handleAwesome.bind(this));
-     }
-
-     registerEventHandlers(eventBus: EventBus): void {
-       eventBus.subscribe('job.created', this.onJobCreated.bind(this));
-     }
-
-     async shutdown(): Promise<void> {
-       // Cleanup
-     }
-   }
-   ```
-
-4. **Install and enable**:
-   ```bash
-   # Build module
-   npm run build --workspace=@modules/my-awesome-module
-   
-   # The platform will auto-detect and load the module
-   ```
-
-### Module Communication
-
-Modules communicate through events:
-
-```typescript
-// Publishing events
-await eventBus.publish('my-module.data-updated', {
-  userId: 'user123',
-  data: { ... }
-});
-
-// Subscribing to events
-eventBus.subscribe('job.created', (jobData) => {
-  // React to job creation
-});
+#### PostgreSQL
+```bash
+DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
-### Data Isolation
-
-Each module has its own isolated data space:
-
-```typescript
-// Module can only access its own data
-const myData = await dataService.create('my-module', 'my-entity', data);
-
-// Cross-module data sharing requires explicit contracts
-dataService.exposeData({
-  name: 'JobDataContract',
-  methods: {
-    getJobs: () => this.getJobs(),
-    getJobsByStatus: (status) => this.getJobsByStatus(status)
-  }
-});
+#### Supabase
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
 ```
+
+### File Storage
+
+Supports multiple storage backends:
+
+- **Supabase Storage** (default in production)
+- **Local filesystem** (development fallback)
+- **AWS S3** (planned)
+- **Azure Blob** (planned)
+
+## 🚢 Deployment
+
+### Render.com (Recommended)
+
+The project includes `render.yaml` for one-click deployment:
+
+1. Connect your GitHub repository to Render
+2. Render will automatically:
+   - Install dependencies
+   - Build the application
+   - Start the backend (which serves the frontend)
+   - Provision PostgreSQL database
+
+### Environment Variables
+
+Required in production:
+```bash
+NODE_ENV=production
+DATABASE_URL=<postgres-connection-string>
+SUPABASE_URL=<your-supabase-url>
+SUPABASE_ANON_KEY=<your-supabase-key>
+SUPABASE_SERVICE_ROLE_KEY=<your-service-key>
+JWT_SECRET=<random-secret>
+```
+
+### Build Process
+
+```bash
+npm run build:prod
+```
+
+This will:
+1. Build backend (copy to `dist/backend/`)
+2. Build frontend (bundle to `dist/frontend/`)
+3. Copy shared utilities to `dist/shared/`
+
+The backend serves the frontend in production from `dist/frontend/`.
 
 ## 🎨 Frontend Development
 
-The platform uses Module Federation for frontend modularity:
+### Tech Stack
 
-```typescript
-// Module frontend component
-export const MyModuleComponent = () => {
-  return (
-    <div>
-      <h2>My Awesome Module</h2>
-      {/* Module-specific UI */}
-    </div>
-  );
-};
+- React 18 with TypeScript
+- Vite 5 for dev server and bundling
+- CSS-in-JS (inline styles)
+- API client with automatic database config injection
 
-// Register with platform
-container.registerComponent('MyModuleComponent', MyModuleComponent);
-```
+### Key Features
 
-## 🔧 Advanced Features
+- **Session-based architecture**: Database config stored in browser, sent with each request
+- **Dark mode ready**: Modern, minimalist design
+- **Responsive**: Works on desktop and mobile
+- **File uploads**: Resume and document management
+- **Status tracking**: Visual pipeline for job applications
 
-### Multiple Database Support
-```typescript
-// Configure different databases per module
-const config = {
-  modules: {
-    'job-tracker': { database: 'mongodb://localhost/jobs' },
-    'analytics': { database: 'postgresql://localhost/analytics' }
-  }
-};
-```
+### Adding a New Page
 
-### Multi-Cloud Storage
-```typescript
-// Add cloud storage providers
-await platform.storageService.addProvider({
-  id: 'aws-s3',
-  type: 'aws-s3',
-  config: {
-    bucket: 'my-job-tracker-files',
-    region: 'us-east-1'
-  }
-});
-```
+1. Create component in `src/frontend/pages/`
+2. Import in `App.tsx`
+3. Add route logic
 
-### Performance Monitoring
-```typescript
-// Built-in performance tracking
-platform.on('module:performance', (metrics) => {
-  console.log('Module performance:', metrics);
-});
-```
+### Adding a New Component
 
-## 📈 Scaling
+1. Create in `src/frontend/components/`
+2. Import where needed
+3. Use TypeScript for props
 
-### Horizontal Scaling
-- Modules can be deployed as separate microservices
-- Event bus supports distributed messaging via Redis
-- Database sharding by module and user
+## 🔒 Security
 
-### Module Marketplace
-- Private module registry for team sharing
-- Version management and compatibility checking
-- Automated testing and deployment
+- Database config validation
+- JWT-based authentication (planned)
+- File upload restrictions (25MB, specific MIME types)
+- SQL injection protection (parameterized queries)
+- CORS configuration
+- Helmet.js security headers (planned)
 
-## 🛡️ Security
-
-- **Module Sandboxing**: Each module runs in isolated context
-- **Permission System**: Fine-grained access control
-- **Data Isolation**: Modules cannot access each other's data without explicit contracts
-- **Audit Logging**: Complete audit trail of all module actions
-
-## 📝 Current Status
+## 📈 Current Status
 
 ### ✅ Completed
-- [x] Platform core architecture
-- [x] Module management system
-- [x] Event bus for inter-module communication
-- [x] Data service with module isolation
-- [x] Authentication and authorization
-- [x] Storage service with multiple providers
-- [x] Basic Job Tracker module
-- [x] API endpoints and documentation
+
+- [x] Monorepo structure with npm workspaces
+- [x] Backend API with modular routes
+- [x] Frontend with React + Vite
+- [x] Multi-database support (SQL.js, PostgreSQL, Supabase)
+- [x] Session-based multi-tenant architecture
+- [x] File upload and storage management
+- [x] Job CRUD operations
+- [x] Status history tracking
+- [x] Statistics dashboard
 
 ### 🚧 In Progress
-- [ ] Frontend UI shell with Module Federation
-- [ ] Module CLI tools
-- [ ] JD-Resume Comparison module
-- [ ] Testing framework
+
+- [ ] Authentication and authorization
+- [ ] User management
+- [ ] Advanced search and filtering
+- [ ] Email notifications
 
 ### 📋 Planned
-- [ ] Frontend module system
-- [ ] More specialized modules
-- [ ] Module marketplace
-- [ ] Advanced analytics
-- [ ] Mobile app support
+
+- [ ] Module system for extensibility
+- [ ] AI-powered job matching
+- [ ] Interview scheduler
+- [ ] Salary negotiation tracker
+- [ ] LinkedIn integration
 
 ## 🤝 Contributing
 
-1. **Create a new module** following the module development guide
-2. **Submit modules** to the community registry
-3. **Contribute to platform core** for infrastructure improvements
-4. **Write documentation** to help other developers
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## 📄 License
 
@@ -308,4 +260,4 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Built with the vision of making job tracking as powerful as custom software, yet as easy as Excel.**
+**Built for job seekers who want powerful tracking without complex setup.**

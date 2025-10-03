@@ -4,7 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express'
-import { DatabaseConfig } from '../services/sqlite-service.js'
+import { DatabaseConfig } from '../database/sqlite-service.js'
 import { Logger } from '../utils/logger.js'
 
 const logger = new Logger('DatabaseConfigMiddleware')

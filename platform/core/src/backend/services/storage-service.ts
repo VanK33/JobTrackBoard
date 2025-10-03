@@ -6,6 +6,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { Logger } from '../utils/logger.js';
+import { PATHS } from '../../shared/config/paths.js';
 import {
   PlatformStorageService,
   FileUpload,
@@ -27,7 +28,7 @@ export class StorageService implements PlatformStorageService {
 
   constructor(
     private dataService: DataService,
-    localStoragePath: string = './storage'
+    localStoragePath: string = PATHS.STORAGE
   ) {
     this.logger = new Logger('StorageService');
     this.localStoragePath = localStoragePath;
@@ -212,7 +213,7 @@ export class StorageService implements PlatformStorageService {
       
       switch (provider.type) {
         case 'local':
-          providerImpl = new LocalStorageProvider(provider.config.path || './storage');
+          providerImpl = new LocalStorageProvider(provider.config.path || PATHS.STORAGE);
           break;
         case 'aws-s3':
           providerImpl = new S3StorageProvider(provider.config);

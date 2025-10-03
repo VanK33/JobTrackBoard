@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { API_BASE_URL } from '../config/api'
-import { apiFetch } from '../utils/api-client'
+import { apiFetch, getStoredDatabaseConfig } from '../utils/api-client'
 
 interface Job {
   _id: string
@@ -651,6 +651,15 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
       // Start upload
       xhr.open('POST', `${API_BASE_URL}/api/jobs/${jobId}/files`)
+
+      // Add database config header
+      const dbConfig = getStoredDatabaseConfig()
+      if (dbConfig) {
+        const configString = JSON.stringify(dbConfig)
+        const encoded = btoa(configString)
+        xhr.setRequestHeader('X-Database-Config', encoded)
+      }
+
       xhr.send(formData)
     })
   }

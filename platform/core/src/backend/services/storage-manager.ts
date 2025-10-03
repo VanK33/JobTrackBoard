@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Logger } from '../utils/logger.js';
 import { PATHS } from '../../shared/config/paths.js';
-import { supabaseStorage } from './supabase-client.js';
+import { supabaseStorage } from '../database/supabase-client.js';
 
 // Storage provider interface
 export interface StorageProvider {

@@ -393,14 +393,15 @@ export class PostgreSQLService {
     console.log(`Status change recorded: ${fromStatus} → ${toStatus} for job ${jobId}`)
   }
 
-  async deleteJob(id: string): Promise<void> {
+  async deleteJob(id: string): Promise<boolean> {
     if (!this.pool) {
       throw new Error('Database not connected')
     }
 
     const client = await this.pool.connect()
     try {
-      await client.query('DELETE FROM jobs WHERE id = $1', [id])
+      const result = await client.query('DELETE FROM jobs WHERE id = $1', [id])
+      return result.rowCount !== null && result.rowCount > 0
     } finally {
       client.release()
     }

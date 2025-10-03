@@ -43,6 +43,9 @@ pids
 *.seed
 *.pid.lock
 
+# Application runtime directories
+.runtime/
+
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov

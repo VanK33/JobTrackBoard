@@ -6,7 +6,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { Logger } from '../utils/logger.js';
-import { supabaseStorage } from './supabase-client.js';
+import { PATHS } from '../../shared/config/paths.js';
+import { supabaseStorage } from '../database/supabase-client.js';
 
 // Storage provider interface
 export interface StorageProvider {
@@ -50,7 +51,7 @@ class SupabaseStorageProvider implements StorageProvider {
 class LocalStorageProvider implements StorageProvider {
   private storageDir: string;
 
-  constructor(storageDir: string = './uploads') {
+  constructor(storageDir: string = PATHS.STORAGE) {
     this.storageDir = storageDir;
   }
 
@@ -154,7 +155,7 @@ export class StorageManager {
   constructor(config: StorageConfig) {
     this.config = config;
     this.logger = new Logger('StorageManager');
-    this.tempDir = config.tempDir || './temp-uploads';
+    this.tempDir = config.tempDir || PATHS.TEMP_UPLOADS;
     this.currentProvider = this.createProvider(config.provider);
 
     this.initializeTempDirectory();

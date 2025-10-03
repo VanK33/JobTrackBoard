@@ -651,6 +651,15 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
       // Start upload
       xhr.open('POST', `${API_BASE_URL}/api/jobs/${jobId}/files`)
+
+      // Add database config header
+      const dbConfig = getStoredDatabaseConfig()
+      if (dbConfig) {
+        const configString = JSON.stringify(dbConfig)
+        const encoded = btoa(configString)
+        xhr.setRequestHeader('X-Database-Config', encoded)
+      }
+
       xhr.send(formData)
     })
   }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { API_BASE_URL } from '../config/api'
-import { apiFetch } from '../utils/api-client'
+import { apiFetch, getStoredDatabaseConfig } from '../utils/api-client'
 
 interface Job {
   _id: string

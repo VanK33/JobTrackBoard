@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { ModuleInfo, InstalledModule } from '../types'
-import ModuleCard from './ModuleCard'
+import ModuleCard from '../components/ModuleCard'
 
 interface ModuleStoreProps {
   modules: ModuleInfo[]

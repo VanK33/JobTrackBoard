@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { InstalledModule } from '../types'
-import JobTrackerModule from './modules/JobTrackerModule'
+import JobTrackerModule from '../components/modules/JobTrackerModule'
 
 interface WorkspaceProps {
   installedModules: InstalledModule[]

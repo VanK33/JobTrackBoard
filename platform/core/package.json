@@ -6,12 +6,12 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "tsx watch src/backend/index-with-db.ts",
+    "dev:backend": "tsx watch src/backend/index.ts",
     "dev:frontend": "vite",
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "mkdir -p dist && cp -r src/* dist/",
     "build:frontend": "vite build",
-    "start": "tsx dist/backend/index-with-db.ts",
+    "start": "tsx dist/backend/index.ts",
     "test": "jest",
     "type-check": "tsc --noEmit"
   },

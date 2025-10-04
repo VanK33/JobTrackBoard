@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { API_BASE_URL } from '../config/api'
 import { apiFetch, getStoredDatabaseConfig } from '../utils/api-client'
+import MarkdownEditor from '../components/MarkdownEditor'
+import DescriptionModal from '../components/DescriptionModal'
+import { truncateMarkdown } from '../utils/markdown'
 
 interface Job {
   _id: string
@@ -74,6 +77,9 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   const [loading, setLoading] = useState(true)
   const [hoveredFile, setHoveredFile] = useState<string | null>(null)
   const [hoveredDescription, setHoveredDescription] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalDescription, setModalDescription] = useState('')
+  const [modalJobTitle, setModalJobTitle] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
@@ -2225,19 +2231,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                     }}>
                       Job Description *
                     </label>
-                    <textarea
+                    <MarkdownEditor
                       value={newJobForm.jobDescription || ''}
-                      onChange={(e) => handleNewJobFormChange('jobDescription', e.target.value)}
-                      rows={6}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '4px',
-                        fontSize: '14px',
-                        resize: 'vertical'
-                      }}
+                      onChange={(value) => handleNewJobFormChange('jobDescription', value)}
                       placeholder="Describe the job requirements, responsibilities, and qualifications..."
+                      height={300}
                     />
                   </div>
 
@@ -2705,19 +2703,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                     }}>
                       Job Description
                     </label>
-                    <textarea
+                    <MarkdownEditor
                       value={editForm.jobDescription || ''}
-                      onChange={(e) => handleFormChange('jobDescription', e.target.value)}
-                      rows={6}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '4px',
-                        fontSize: '14px',
-                        resize: 'vertical'
-                      }}
+                      onChange={(value) => handleFormChange('jobDescription', value)}
                       placeholder="Enter job description..."
+                      height={300}
                     />
                   </div>
 
@@ -3114,40 +3104,34 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                     fontSize: '13px',
                     lineHeight: '1.5',
                     color: '#333333',
-                    cursor: selectedJob.jobDescription && selectedJob.jobDescription.length > 200 ? 'help' : 'default',
-                    position: 'relative'
+                    cursor: selectedJob.jobDescription ? 'pointer' : 'default',
+                    position: 'relative',
+                    padding: '8px',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '4px',
+                    backgroundColor: selectedJob.jobDescription ? '#f9fafb' : 'transparent'
                   }}
-                  onMouseEnter={() => setHoveredDescription(selectedJob._id)}
-                  onMouseLeave={() => setHoveredDescription(null)}
+                  onClick={() => {
+                    if (selectedJob.jobDescription) {
+                      setModalDescription(selectedJob.jobDescription);
+                      setModalJobTitle(`${selectedJob.title} at ${selectedJob.company}`);
+                      setModalOpen(true);
+                    }
+                  }}
                 >
-                  {selectedJob.jobDescription
-                    ? truncateText(selectedJob.jobDescription, 200)
-                    : 'No description available'
-                  }
-
-                  {hoveredDescription === selectedJob._id && selectedJob.jobDescription && selectedJob.jobDescription.length > 200 && (
+                  {selectedJob.jobDescription ? (
+                    truncateMarkdown(selectedJob.jobDescription, 100)
+                  ) : (
+                    'No description available'
+                  )}
+                  {selectedJob.jobDescription && (
                     <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: '0',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #000000',
-                      borderRadius: '4px',
-                      padding: '12px',
-                      fontSize: '12px',
-                      color: '#000000',
-                      zIndex: 1000,
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
                       marginTop: '8px',
-                      width: '300px',
-                      maxHeight: '400px',
-                      overflowY: 'auto',
-                      whiteSpace: 'pre-wrap'
+                      fontSize: '12px',
+                      color: '#0066cc',
+                      fontStyle: 'italic'
                     }}>
-                      <strong>Full Job Description:</strong>
-                      <br />
-                      <br />
-                      {selectedJob.jobDescription}
+                      Click to view full description
                     </div>
                   )}
                 </div>
@@ -3939,6 +3923,14 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         onClick={closeMobilePreview}
       />
     )}
+
+    {/* Description Modal */}
+    <DescriptionModal
+      isOpen={modalOpen}
+      onClose={() => setModalOpen(false)}
+      description={modalDescription}
+      jobTitle={modalJobTitle}
+    />
     </>
   )
 }

@@ -21,7 +21,7 @@ export class PostgreSQLService {
       ssl: config.ssl ? { rejectUnauthorized: false } : false,
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 10000,
     })
 
     // Test the connection
@@ -36,7 +36,7 @@ export class PostgreSQLService {
       ssl: { rejectUnauthorized: false },
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 10000,
     })
 
     // Test the connection

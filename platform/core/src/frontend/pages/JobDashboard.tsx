@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { API_BASE_URL } from '../config/api'
 import { apiFetch, getStoredDatabaseConfig } from '../utils/api-client'
@@ -68,8 +68,22 @@ interface PreviewState {
   triggerElement: HTMLElement | null
 }
 
+interface FilterState {
+  status: string[]
+  location: string[]
+}
+
 interface JobDashboardProps {
   onNavigateToSettings?: () => void
+}
+
+// Status priority for sorting
+const STATUS_PRIORITY: Record<string, number> = {
+  'applied': 1,
+  'screening': 2,
+  'interview': 3,
+  'offered': 4,
+  'rejected': 5
 }
 
 const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => {
@@ -102,6 +116,15 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   const [editingFileName, setEditingFileName] = useState<string | null>(null)
   const [editingFileNameValue, setEditingFileNameValue] = useState<string>('')
   const [uploadProgressMap, setUploadProgressMap] = useState<{[fileId: string]: number}>({})
+
+  // Sorting and filtering state
+  const [sortBy, setSortBy] = useState<string>('recent')
+  const [filters, setFilters] = useState<FilterState>({
+    status: [],
+    location: []
+  })
+  const [showStatusFilter, setShowStatusFilter] = useState(false)
+  const [showLocationFilter, setShowLocationFilter] = useState(false)
 
   // Preview system state
   const [previewState, setPreviewState] = useState<PreviewState>({
@@ -148,6 +171,47 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     offered: 'Offered',
     rejected: 'Rejected'
   }
+
+  // Unique locations for filter dropdown
+  const uniqueLocations = useMemo(() => {
+    return [...new Set(jobs.map(j => j.location).filter(Boolean))].sort()
+  }, [jobs])
+
+  // Filtered and sorted jobs based on current preferences
+  const filteredAndSortedJobs = useMemo(() => {
+    // 1. Apply filters
+    let result = jobs.filter(job => {
+      // Status filter (AND logic)
+      if (filters.status.length > 0 && !filters.status.includes(job.status)) {
+        return false
+      }
+      // Location filter (AND logic)
+      if (filters.location.length > 0 && !filters.location.includes(job.location)) {
+        return false
+      }
+      return true
+    })
+
+    // 2. Apply sort
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'recent':
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        case 'oldest':
+          return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+        case 'status':
+          return STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status]
+        case 'location':
+          return (a.location || '\uffff').localeCompare(b.location || '\uffff')
+        case 'company':
+          return (a.company || '\uffff').localeCompare(b.company || '\uffff')
+        default:
+          return 0
+      }
+    })
+
+    return result
+  }, [jobs, sortBy, filters])
 
   // Empty initial state - will load from database
 
@@ -218,7 +282,46 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   useEffect(() => {
     console.log('⚡ JobDashboard useEffect triggered')
     fetchJobsFromDatabase()
+
+    // Load sort preference from localStorage
+    try {
+      const savedSort = localStorage.getItem('job-dashboard-sort')
+      if (savedSort && ['recent', 'oldest', 'status', 'location', 'company'].includes(savedSort)) {
+        setSortBy(savedSort)
+      }
+    } catch (error) {
+      console.error('Failed to load sort preference:', error)
+    }
+
+    // Load filter preferences from localStorage
+    try {
+      const savedFilters = localStorage.getItem('job-dashboard-filters')
+      if (savedFilters) {
+        const parsed = JSON.parse(savedFilters)
+        setFilters(parsed)
+      }
+    } catch (error) {
+      console.error('Failed to load filter preferences:', error)
+    }
   }, [])
+
+  // Save sort preference to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('job-dashboard-sort', sortBy)
+    } catch (error) {
+      console.error('Failed to save sort preference:', error)
+    }
+  }, [sortBy])
+
+  // Save filter preferences to localStorage when they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('job-dashboard-filters', JSON.stringify(filters))
+    } catch (error) {
+      console.error('Failed to save filter preferences:', error)
+    }
+  }, [filters])
 
   // Use jobs directly from database (empty array when no data)
   const displayJobs = jobs
@@ -1690,6 +1793,195 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
           }}>
             Modular Job Tracking Platform
           </h2>
+
+          {/* Sort and Filter Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+            {/* Sort Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label htmlFor="sort-select" style={{ fontSize: '14px', color: '#666', fontWeight: '500' }}>
+                Sort by:
+              </label>
+              <select
+                id="sort-select"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '14px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  outline: 'none'
+                }}
+                aria-label="Sort applications by"
+              >
+                <option value="recent">Recent</option>
+                <option value="oldest">Oldest First</option>
+                <option value="status">Status Progress</option>
+                <option value="location">Location A-Z</option>
+                <option value="company">Company A-Z</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowStatusFilter(!showStatusFilter)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '14px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  backgroundColor: filters.status.length > 0 ? '#f0f0f0' : '#fff',
+                  cursor: 'pointer',
+                  fontWeight: filters.status.length > 0 ? '600' : '400',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                aria-label="Filter by status"
+                aria-expanded={showStatusFilter}
+              >
+                Status
+                {filters.status.length > 0 && (
+                  <span style={{
+                    backgroundColor: '#000',
+                    color: '#fff',
+                    borderRadius: '50%',
+                    padding: '2px 6px',
+                    fontSize: '11px',
+                    minWidth: '18px',
+                    textAlign: 'center'
+                  }}>
+                    {filters.status.length}
+                  </span>
+                )}
+              </button>
+              {showStatusFilter && (
+                <div style={{
+                  position: 'absolute',
+                  backgroundColor: '#fff',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  padding: '12px',
+                  marginTop: '4px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  zIndex: 1000,
+                  minWidth: '200px'
+                }}>
+                  {statusOrder.map(status => (
+                    <label key={status} style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={filters.status.includes(status)}
+                        onChange={(e) => {
+                          const newStatus = e.target.checked
+                            ? [...filters.status, status]
+                            : filters.status.filter(s => s !== status)
+                          setFilters({ ...filters, status: newStatus })
+                        }}
+                        style={{ marginRight: '8px' }}
+                      />
+                      <span style={{ textTransform: 'capitalize' }}>
+                        {statusLabels[status as keyof typeof statusLabels]}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Location Filter */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowLocationFilter(!showLocationFilter)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '14px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  backgroundColor: filters.location.length > 0 ? '#f0f0f0' : '#fff',
+                  cursor: 'pointer',
+                  fontWeight: filters.location.length > 0 ? '600' : '400',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                aria-label="Filter by location"
+                aria-expanded={showLocationFilter}
+              >
+                Location
+                {filters.location.length > 0 && (
+                  <span style={{
+                    backgroundColor: '#000',
+                    color: '#fff',
+                    borderRadius: '50%',
+                    padding: '2px 6px',
+                    fontSize: '11px',
+                    minWidth: '18px',
+                    textAlign: 'center'
+                  }}>
+                    {filters.location.length}
+                  </span>
+                )}
+              </button>
+              {showLocationFilter && (
+                <div style={{
+                  position: 'absolute',
+                  backgroundColor: '#fff',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  padding: '12px',
+                  marginTop: '4px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  zIndex: 1000,
+                  minWidth: '200px'
+                }}>
+                  {uniqueLocations.length > 0 ? (
+                    uniqueLocations.map(location => (
+                      <label key={location} style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={filters.location.includes(location)}
+                          onChange={(e) => {
+                            const newLocation = e.target.checked
+                              ? [...filters.location, location]
+                              : filters.location.filter(l => l !== location)
+                            setFilters({ ...filters, location: newLocation })
+                          }}
+                          style={{ marginRight: '8px' }}
+                        />
+                        <span>{location}</span>
+                      </label>
+                    ))
+                  ) : (
+                    <div style={{ color: '#999', fontSize: '13px' }}>No locations available</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Clear All Button */}
+            {(filters.status.length > 0 || filters.location.length > 0) && (
+              <button
+                onClick={() => setFilters({ status: [], location: [] })}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '14px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  backgroundColor: '#ff4444',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: '500'
+                }}
+                aria-label="Clear all filters"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Job List */}
@@ -1708,7 +2000,35 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
             }
           }}
         >
-          {(isCreatingNew && newJobForm ? [newJobForm, ...jobs] : jobs).map(job => {
+          {/* Empty State */}
+          {filteredAndSortedJobs.length === 0 && (filters.status.length > 0 || filters.location.length > 0) && (
+            <div style={{
+              textAlign: 'center',
+              padding: '60px 20px',
+              color: '#999'
+            }}>
+              <p style={{ fontSize: '16px', marginBottom: '16px', fontWeight: '500' }}>
+                No applications match your filters
+              </p>
+              <button
+                onClick={() => setFilters({ status: [], location: [] })}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  backgroundColor: '#000',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: '500'
+                }}
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+
+          {filteredAndSortedJobs.length > 0 && (isCreatingNew && newJobForm ? [newJobForm, ...filteredAndSortedJobs] : filteredAndSortedJobs).map(job => {
             const isPlaceholder = job._id.startsWith('new-')
             return (
               <div
@@ -1719,8 +2039,8 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                 role="button"
                 aria-selected={selectedJob?._id === job._id}
                 style={{
-                  padding: selectedJob && !detailViewExpanded ? '12px 16px' : '16px',
-                  marginBottom: selectedJob && !detailViewExpanded ? '6px' : '8px',
+                  padding: '10px 16px',
+                  marginBottom: '5px',
                   border: selectedJob?._id === job._id ? '2px solid #000000' : (isPlaceholder ? '2px dashed #666666' : '1px solid #e0e0e0'),
                   borderRadius: '4px',
                   backgroundColor: selectedJob?._id === job._id ? '#f8f9fa' : (isPlaceholder ? '#f0f8ff' : '#ffffff'),

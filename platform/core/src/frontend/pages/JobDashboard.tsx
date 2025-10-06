@@ -44,8 +44,9 @@ interface JobFile {
   url: string
   uploadedAt: string
   uploadProgress?: number
-  uploadStatus?: 'uploading' | 'completed' | 'failed'
+  uploadStatus?: 'uploading' | 'completed' | 'failed' | 'pending'
   error?: string
+  rawFile?: File  // Store original File object for pending uploads
 }
 
 interface FileUploadState {
@@ -292,23 +293,63 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       })
 
       if (response.ok) {
-        // Get the latest job data to ensure we have updated files
-        const freshJobResponse = await apiFetch(`${API_BASE_URL}/api/jobs/${editForm._id}`)
-        if (freshJobResponse.ok) {
-          const updatedJob = await freshJobResponse.json()
-          const updatedJobs = jobs.map(job =>
-            job._id === editForm._id ? updatedJob : job
-          )
-          setJobs(updatedJobs)
-          setSelectedJob(updatedJob)
+        // Handle pending file uploads
+        const pendingFiles = editForm?.files?.filter(f => f.uploadStatus === 'pending') || []
+
+        if (pendingFiles.length > 0) {
+          const jobIdString = editForm._id
+          console.log(`Uploading ${pendingFiles.length} pending files to job ${jobIdString}`)
+
+          for (const pendingFile of pendingFiles) {
+            try {
+              const file = pendingFile.rawFile
+              if (!file) {
+                console.error(`No raw file for pending upload: ${pendingFile.name}`)
+                continue
+              }
+
+              await realFileUpload(file, jobIdString, pendingFile.type)
+              console.log(`Successfully uploaded ${pendingFile.name}`)
+
+              // Clean up blob URL after successful upload
+              if (pendingFile.url.startsWith('blob:')) {
+                URL.revokeObjectURL(pendingFile.url)
+              }
+            } catch (uploadError) {
+              console.error(`Failed to upload ${pendingFile.name}:`, uploadError)
+            }
+          }
+
+          // Get the LATEST job data AFTER file uploads to ensure we have all files
+          const freshJobResponse = await apiFetch(`${API_BASE_URL}/api/jobs/${editForm._id}`)
+          if (freshJobResponse.ok) {
+            const updatedJob = await freshJobResponse.json()
+            const updatedJobs = jobs.map(job =>
+              job._id === editForm._id ? updatedJob : job
+            )
+            setJobs(updatedJobs)
+            setSelectedJob(updatedJob)
+            console.log('✅ Selected job updated with uploaded files')
+          }
         } else {
-          // Fallback to response from update call
-          const updatedJob = await response.json()
-          const updatedJobs = jobs.map(job =>
-            job._id === editForm._id ? updatedJob : job
-          )
-          setJobs(updatedJobs)
-          setSelectedJob(updatedJob)
+          // No pending files, get updated job data
+          const freshJobResponse = await apiFetch(`${API_BASE_URL}/api/jobs/${editForm._id}`)
+          if (freshJobResponse.ok) {
+            const updatedJob = await freshJobResponse.json()
+            const updatedJobs = jobs.map(job =>
+              job._id === editForm._id ? updatedJob : job
+            )
+            setJobs(updatedJobs)
+            setSelectedJob(updatedJob)
+          } else {
+            // Fallback to response from update call
+            const updatedJob = await response.json()
+            const updatedJobs = jobs.map(job =>
+              job._id === editForm._id ? updatedJob : job
+            )
+            setJobs(updatedJobs)
+            setSelectedJob(updatedJob)
+          }
         }
         setIsEditing(false)
         setEditForm(null)
@@ -333,6 +374,13 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   }
 
   const confirmCancelEdit = () => {
+    // Clean up blob URLs before clearing form
+    editForm?.files?.forEach(file => {
+      if (file.url.startsWith('blob:')) {
+        URL.revokeObjectURL(file.url)
+      }
+    })
+
     setIsEditing(false)
     setEditForm(null)
     setHasUnsavedChanges(false)
@@ -401,9 +449,16 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
       if (response.ok) {
         const createdJob = await response.json()
+        console.log('Created job response:', createdJob)
 
         // Handle pending file uploads
         const pendingFiles = newJobForm?.files?.filter(f => f.uploadStatus === 'pending') || []
+
+        // Get the job ID - try both id and _id fields
+        const jobId = createdJob.id || createdJob._id
+        const jobIdString = jobId?.toString()
+
+        console.log(`Job created with ID: ${jobId}, pending files: ${pendingFiles.length}`)
 
         // Clean up form state immediately
         setIsCreatingNew(false)
@@ -417,38 +472,56 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
           // Find and select the newly created job from refreshed data
           const refreshedJobs = await apiFetch(`${API_BASE_URL}/api/jobs`).then(r => r.json())
-          const newJob = refreshedJobs.find((j: any) => j.id.toString() === createdJob.id.toString())
+          const newJob = refreshedJobs.find((j: any) => {
+            const jId = j.id || j._id
+            return jId?.toString() === jobIdString
+          })
+
           if (newJob) {
             setSelectedJob({
               ...newJob,
-              _id: newJob.id.toString()
+              _id: (newJob.id || newJob._id)?.toString()
             })
 
             // Upload pending files to the newly created job
-            if (pendingFiles.length > 0) {
-              const jobIdString = createdJob.id?.toString()
-              console.log(`Uploading ${pendingFiles.length} pending files to job ${createdJob.id} (jobIdString: ${jobIdString})`)
-
-              if (!jobIdString || jobIdString === 'undefined' || jobIdString === 'NaN') {
-                console.error('Invalid jobId for file upload:', createdJob.id)
+            if (pendingFiles.length > 0 && jobIdString) {
+              if (jobIdString === 'undefined' || jobIdString === 'NaN') {
+                console.error('Invalid jobId for file upload:', jobId)
                 return
               }
 
+              console.log(`📤 Uploading ${pendingFiles.length} pending files to job ${jobIdString}`)
+
               for (const pendingFile of pendingFiles) {
                 try {
-                  // Convert URL back to File object for upload
-                  const response = await apiFetch(pendingFile.url)
-                  const blob = await response.blob()
-                  const file = new File([blob], pendingFile.name, { type: pendingFile.mimeType })
+                  // Use stored raw File object for upload
+                  const file = pendingFile.rawFile
+                  if (!file) {
+                    console.error(`No raw file for pending upload: ${pendingFile.name}`)
+                    continue
+                  }
 
                   await realFileUpload(file, jobIdString, pendingFile.type)
                   console.log(`Successfully uploaded ${pendingFile.name}`)
+
+                  // Clean up blob URL after successful upload
+                  if (pendingFile.url.startsWith('blob:')) {
+                    URL.revokeObjectURL(pendingFile.url)
+                  }
                 } catch (uploadError) {
                   console.error(`Failed to upload ${pendingFile.name}:`, uploadError)
                 }
               }
               // Refresh again to show uploaded files
               await fetchJobsFromDatabase()
+
+              // Update selectedJob with the latest data including uploaded files
+              const finalRefresh = await apiFetch(`${API_BASE_URL}/api/jobs/${jobIdString}`)
+              if (finalRefresh.ok) {
+                const updatedJobWithFiles = await finalRefresh.json()
+                setSelectedJob(updatedJobWithFiles)
+                console.log('✅ Selected job updated with uploaded files')
+              }
             }
           }
         } catch (refreshError) {
@@ -466,6 +539,13 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   }
 
   const handleCancelNewApplication = () => {
+    // Clean up blob URLs before clearing form
+    newJobForm?.files?.forEach(file => {
+      if (file.url.startsWith('blob:')) {
+        URL.revokeObjectURL(file.url)
+      }
+    })
+
     setIsCreatingNew(false)
     setNewJobForm(null)
     setSelectedJob(null)
@@ -620,7 +700,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     return null
   }
 
-  const realFileUpload = async (file: File, jobId: string, fileType: string = 'other', onProgress?: (progress: number) => void): Promise<JobFile> => {
+  const realFileUpload = async (file: File, jobId: string, fileType: string = 'resume', onProgress?: (progress: number) => void): Promise<JobFile> => {
     return new Promise((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', file)
@@ -686,24 +766,30 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         // Check if we have a valid job to upload to
         const jobId = isCreatingNew ? null : (isEditing ? editForm?._id : selectedJob?._id)
         if (!jobId) {
-          if (isCreatingNew) {
-            console.log('Cannot upload files during creation: Job must be saved first')
-            // Store files temporarily for new job creation
+          if (isCreatingNew || isEditing) {
+            console.log(`Cannot upload files during ${isCreatingNew ? 'creation' : 'editing'}: Job must be saved first`)
+            // Store files temporarily for new job creation or editing
             const tempFile: JobFile = {
               id: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               name: file.name,
-              type: 'other',
+              type: 'resume',
               mimeType: file.type,
               size: file.size,
               url: URL.createObjectURL(file),
               uploadedAt: new Date().toISOString(),
-              uploadStatus: 'pending'
+              uploadStatus: 'pending',
+              rawFile: file  // Store the raw File object
             }
 
-            if (newJobForm) {
+            if (isCreatingNew && newJobForm) {
               setNewJobForm({
                 ...newJobForm,
                 files: [...(newJobForm.files || []), tempFile]
+              })
+            } else if (isEditing && editForm) {
+              setEditForm({
+                ...editForm,
+                files: [...(editForm.files || []), tempFile]
               })
             }
             continue
@@ -727,7 +813,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
         const uploadingFile: JobFile = {
           id: fileId,
           name: file.name,
-          type: 'other',
+          type: 'resume',
           mimeType: file.type,
           size: file.size,
           url: URL.createObjectURL(file),
@@ -758,7 +844,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
           ))
         }
 
-        const uploadedFile = await realFileUpload(file, jobId, 'other', (progress) => {
+        const uploadedFile = await realFileUpload(file, jobId, 'resume', (progress) => {
           setUploadProgressMap(prev => ({
             ...prev,
             [fileId]: progress

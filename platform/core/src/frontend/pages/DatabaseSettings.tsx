@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { DatabaseConfig, DatabaseProvider, DatabaseStatus } from '../types'
-import { DataMigrationService } from '../utils/data-migration'
 import { apiClient, getStoredDatabaseConfig, storeDatabaseConfig } from '../utils/api-client'
+import TutorialModal from '../components/TutorialModal'
 
 interface DatabaseSettingsProps {
   onNavigateBack?: () => void
@@ -26,24 +26,11 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
   })
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [useConnectionString, setUseConnectionString] = useState(false)
+  const [useConnectionString, setUseConnectionString] = useState(true)
   const [savedConnectionString, setSavedConnectionString] = useState('')
   const [connectionStringHistory, setConnectionStringHistory] = useState<string[]>([])
-  const [migrationStatus, setMigrationStatus] = useState<{
-    isRunning: boolean;
-    completed: boolean;
-    found: number;
-    imported: number;
-    errors: string[];
-    summary: string;
-  }>({
-    isRunning: false,
-    completed: false,
-    found: 0,
-    imported: 0,
-    errors: [],
-    summary: ''
-  })
+  const [showTutorialModal, setShowTutorialModal] = useState(false)
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false)
 
   // Utility function to parse connection string and detect database type
   const parseConnectionString = (connectionString: string): DatabaseConfig['type'] | null => {
@@ -186,6 +173,18 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     }
   }
 
+  const handleOpenTutorial = () => {
+    setShowTutorialModal(true)
+  }
+
+  const handleCloseTutorial = () => {
+    setShowTutorialModal(false)
+  }
+
+  const handleToggleAdvancedFields = () => {
+    setShowAdvancedFields(prev => !prev)
+  }
+
   const testConnection = async () => {
     setIsTestingConnection(true)
     setStatus(prev => ({ ...prev, error: undefined }))
@@ -269,38 +268,6 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
   }
 
 
-  const runDataMigration = async () => {
-    setMigrationStatus(prev => ({ ...prev, isRunning: true, errors: [] }))
-
-    try {
-      const result = await DataMigrationService.migrateAll()
-
-      setMigrationStatus({
-        isRunning: false,
-        completed: true,
-        found: result.found,
-        imported: result.imported,
-        errors: result.errors,
-        summary: result.summary
-      })
-
-      if (result.success && result.imported > 0) {
-        // Optionally clear localStorage after successful migration
-        DataMigrationService.clearJobDataFromLocalStorage()
-      }
-
-    } catch (error) {
-      setMigrationStatus({
-        isRunning: false,
-        completed: true,
-        found: 0,
-        imported: 0,
-        errors: [error instanceof Error ? error.message : 'Migration failed'],
-        summary: 'Migration failed due to an error'
-      })
-    }
-  }
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -357,7 +324,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
               fontWeight: '700',
               color: '#111827'
             }}>
-              Database Settings
+              {getStoredDatabaseConfig() ? 'Database Settings' : 'Database Initialization'}
             </h1>
           </div>
           <p style={{
@@ -458,84 +425,8 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
                 <div style={{ color: '#0369a1', fontWeight: '500', marginBottom: '8px' }}>
                   ✅ Database Ready
                 </div>
-                <div style={{ color: '#075985', fontSize: '14px', marginBottom: '12px' }}>
+                <div style={{ color: '#075985', fontSize: '14px' }}>
                   Your database is connected and initialized. All tables are ready for use.
-                </div>
-
-                {/* Data Migration Section */}
-                <div style={{
-                  backgroundColor: '#ffffff',
-                  padding: '12px',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1'
-                }}>
-                  <div style={{ color: '#1e293b', fontWeight: '500', marginBottom: '8px' }}>
-                    📥 Data Migration
-                  </div>
-                  <div style={{ color: '#64748b', fontSize: '13px', marginBottom: '12px' }}>
-                    Import your existing job data from localStorage to the database.
-                  </div>
-
-                  {!migrationStatus.completed && (
-                    <button
-                      onClick={runDataMigration}
-                      disabled={migrationStatus.isRunning}
-                      style={{
-                        padding: '8px 16px',
-                        backgroundColor: migrationStatus.isRunning ? '#9ca3af' : '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        cursor: migrationStatus.isRunning ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      {migrationStatus.isRunning ? 'Migrating...' : 'Migrate Data from Browser'}
-                    </button>
-                  )}
-
-                  {migrationStatus.completed && (
-                    <div style={{ marginTop: '8px' }}>
-                      <div style={{
-                        color: migrationStatus.errors.length > 0 ? '#dc2626' : '#059669',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        marginBottom: '4px'
-                      }}>
-                        {migrationStatus.summary}
-                      </div>
-                      {migrationStatus.found > 0 && (
-                        <div style={{ color: '#64748b', fontSize: '12px' }}>
-                          Found: {migrationStatus.found} • Imported: {migrationStatus.imported}
-                          {migrationStatus.errors.length > 0 && ` • Errors: ${migrationStatus.errors.length}`}
-                        </div>
-                      )}
-                      {migrationStatus.errors.length > 0 && (
-                        <div style={{
-                          marginTop: '8px',
-                          padding: '8px',
-                          backgroundColor: '#fef2f2',
-                          borderRadius: '4px',
-                          border: '1px solid #fecaca'
-                        }}>
-                          <div style={{ color: '#dc2626', fontSize: '12px', fontWeight: '500' }}>
-                            Errors:
-                          </div>
-                          {migrationStatus.errors.slice(0, 3).map((error, index) => (
-                            <div key={index} style={{ color: '#dc2626', fontSize: '11px', marginTop: '2px' }}>
-                              • {error}
-                            </div>
-                          ))}
-                          {migrationStatus.errors.length > 3 && (
-                            <div style={{ color: '#dc2626', fontSize: '11px', marginTop: '2px' }}>
-                              ... and {migrationStatus.errors.length - 3} more
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -568,7 +459,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
               borderRadius: '8px',
               border: '1px solid #e0f2fe'
             }}>
-              <strong>Note:</strong> This project is designed for Supabase by default. If you want to extend support for other databases, you can implement it yourself.
+              This project is designed for Supabase by default. Should work with other PostgreSQL
             </p>
             <div style={{
               display: 'grid',
@@ -638,34 +529,57 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
                   </div>
                   <div style={{
                     display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
                     gap: '8px'
                   }}>
-                    <a
-                      href={provider.signupUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        fontSize: '12px',
-                        color: '#3b82f6',
-                        textDecoration: 'none'
-                      }}
-                    >
-                      Sign up
-                    </a>
-                    <a
-                      href={provider.docsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        fontSize: '12px',
-                        color: '#3b82f6',
-                        textDecoration: 'none'
-                      }}
-                    >
-                      Docs
-                    </a>
+                    <div style={{
+                      display: 'flex',
+                      gap: '8px'
+                    }}>
+                      <a
+                        href={provider.signupUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          fontSize: '12px',
+                          color: '#3b82f6',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        Sign up
+                      </a>
+                      <a
+                        href={provider.docsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          fontSize: '12px',
+                          color: '#3b82f6',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        Docs
+                      </a>
+                    </div>
+                    {provider.id === 'supabase' && (
+                      <button
+                        onClick={handleOpenTutorial}
+                        style={{
+                          fontSize: '12px',
+                          color: '#3b82f6',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textDecoration: 'none',
+                          padding: 0
+                        }}
+                      >
+                        Tutorial
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -689,61 +603,27 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
             Database Connection Configuration
           </h2>
 
-          {/* Connection String Toggle */}
+          {/* Advanced Options Toggle */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer'
-            }}>
-              <input
-                type="checkbox"
-                checked={useConnectionString}
-                onChange={(e) => {
-                  const checked = e.target.checked
-                  setUseConnectionString(checked)
-
-                  if (checked) {
-                    // When enabling connection string, restore saved connection string if available
-                    if (savedConnectionString) {
-                      const detectedType = parseConnectionString(savedConnectionString)
-                      setConfig(prev => ({
-                        ...prev,
-                        connectionString: savedConnectionString,
-                        type: detectedType || 'postgresql'
-                      }))
-                    } else if (config.connectionString) {
-                      // If no saved connection string, use current one
-                      const detectedType = parseConnectionString(config.connectionString)
-                      if (detectedType) {
-                        setConfig(prev => ({ ...prev, type: detectedType }))
-                      }
-                    } else {
-                      // Set default to PostgreSQL when using connection string
-                      setConfig(prev => ({ ...prev, type: 'postgresql' }))
-                    }
-                  } else {
-                    // When disabling connection string, save current one and clear it
-                    if (config.connectionString) {
-                      setSavedConnectionString(config.connectionString)
-                    }
-                    setConfig(prev => ({
-                      ...prev,
-                      connectionString: '',
-                      type: 'postgresql'
-                    }))
-                  }
-                }}
-              />
-              <span style={{ fontSize: '14px', color: '#374151' }}>
-                Use connection string (recommended)
-              </span>
-            </label>
+            <button
+              onClick={handleToggleAdvancedFields}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#3b82f6',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                textDecoration: 'none',
+                padding: '4px 0'
+              }}
+            >
+              {showAdvancedFields ? 'Hide' : 'Show'} Advanced Options
+            </button>
           </div>
 
-          {useConnectionString ? (
-            /* Connection String Input */
+          {/* Connection String Input (shown when Advanced is hidden) */}
+          {!showAdvancedFields && (
             <div style={{ marginBottom: '16px' }}>
               <label style={{
                 display: 'block',
@@ -814,8 +694,10 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
                 </div>
               )}
             </div>
-          ) : (
-            /* Individual Fields */
+          )}
+
+          {/* Individual Fields (shown when Advanced toggled) */}
+          {showAdvancedFields && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
               <div>
                 <label style={{
@@ -1006,7 +888,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
                 transition: 'background-color 0.2s ease'
               }}
             >
-              {isTestingConnection ? 'Testing...' : 'Test Connection'}
+              {isTestingConnection ? 'Connecting...' : 'Connect Database'}
             </button>
 
             <button
@@ -1027,6 +909,11 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           </div>
         </div>
       </div>
+
+      <TutorialModal
+        isOpen={showTutorialModal}
+        onClose={handleCloseTutorial}
+      />
     </div>
   )
 }

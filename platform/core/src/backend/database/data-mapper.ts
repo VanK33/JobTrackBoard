@@ -211,13 +211,15 @@ export class DataMapper {
    * Map frontend field name to database column name
    */
   static mapFieldToColumn(frontendField: string): string {
-    return this.FIELD_MAPPING.toDatabase[frontendField] || frontendField
+    const mapping = this.FIELD_MAPPING.toDatabase as Record<string, string>;
+    return mapping[frontendField] || frontendField
   }
 
   /**
    * Map database column name to frontend field name
    */
   static mapColumnToField(databaseColumn: string): string {
-    return this.FIELD_MAPPING.toFrontend[databaseColumn] || databaseColumn
+    const mapping = this.FIELD_MAPPING.toFrontend as Record<string, string>;
+    return mapping[databaseColumn] || databaseColumn
   }
 }

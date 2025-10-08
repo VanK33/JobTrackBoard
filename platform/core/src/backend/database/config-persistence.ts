@@ -28,7 +28,8 @@ export class ConfigPersistenceService {
         host: config.host || 'local'
       });
     } catch (error) {
-      this.logger.error('Failed to save configuration', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to save configuration', { error: message });
       throw error;
     }
   }
@@ -56,7 +57,8 @@ export class ConfigPersistenceService {
 
       return config;
     } catch (error) {
-      this.logger.error('Failed to load configuration', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to load configuration', { error: message });
       return null;
     }
   }
@@ -93,7 +95,8 @@ export class ConfigPersistenceService {
         this.logger.info('Cleared saved database configuration');
       }
     } catch (error) {
-      this.logger.error('Failed to clear configuration', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to clear configuration', { error: message });
     }
   }
 

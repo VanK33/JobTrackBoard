@@ -1,4 +1,8 @@
 import { DatabaseConfig } from './sqlite-service'
+import { SQLiteService } from './sqlite-service'
+import { PostgreSQLService } from './postgresql-service'
+import { supabaseStorage } from './supabase-client.js'
+import { jobRecordToJob, jobToJobRecord, partialJobToJobRecord } from './type-mappers.js'
 
 interface Job {
   _id?: string
@@ -19,9 +23,6 @@ interface Job {
   files?: any[]
   statusHistory?: any[]
 }
-import { SQLiteService } from './sqlite-service'
-import { PostgreSQLService } from './postgresql-service'
-import { supabaseStorage } from './supabase-client.js'
 
 export class DatabaseManager {
   private currentService: SQLiteService | PostgreSQLService | null = null
@@ -121,14 +122,17 @@ export class DatabaseManager {
     if (!this.currentService) {
       throw new Error('No database service configured')
     }
-    return await this.currentService.getJobs()
+    const records = await this.currentService.getJobs()
+    return records.map(jobRecordToJob)
   }
 
   async createJob(job: Omit<Job, 'id'>): Promise<Job> {
     if (!this.currentService) {
       throw new Error('No database service configured')
     }
-    return await this.currentService.createJob(job)
+    const jobRecord = jobToJobRecord(job as Omit<Job, 'id' | 'createdAt' | 'updatedAt'>)
+    const created = await this.currentService.createJob(jobRecord as any) // Type assertion due to service signature mismatch
+    return jobRecordToJob(created as any)
   }
 
   async updateJob(id: string, updates: Partial<Job>): Promise<Job> {
@@ -136,12 +140,16 @@ export class DatabaseManager {
       throw new Error('No database service configured')
     }
 
+    const recordUpdates = partialJobToJobRecord(updates)
+
     if (this.currentService instanceof PostgreSQLService) {
-      return await this.currentService.updateJob(id, updates)
+      const updated = await this.currentService.updateJob(id, recordUpdates)
+      return updated ? jobRecordToJob(updated) : updates as Job
     } else {
       // SQLite expects number ID
       const numericId = parseInt(id)
-      return await this.currentService.updateJob(numericId, updates)
+      const updated = await this.currentService.updateJob(numericId, recordUpdates)
+      return updated ? jobRecordToJob(updated) : updates as Job
     }
   }
 
@@ -184,7 +192,8 @@ export class DatabaseManager {
     if (!this.currentService) {
       throw new Error('No database service configured')
     }
-    return await this.currentService.migrateJobs(jobs)
+    const jobRecords = jobs.map(job => jobToJobRecord(job as any))
+    return await this.currentService.migrateJobs(jobRecords as any)
   }
 
   // File operations

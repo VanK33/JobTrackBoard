@@ -212,6 +212,7 @@ export interface ModuleRouter {
   get(path: string, handler: RouteHandler): void;
   post(path: string, handler: RouteHandler): void;
   put(path: string, handler: RouteHandler): void;
+  patch(path: string, handler: RouteHandler): void;
   delete(path: string, handler: RouteHandler): void;
   use(middleware: Middleware): void;
 }

@@ -199,8 +199,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get jobs', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get jobs', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -220,8 +221,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get job', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get job', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -268,8 +270,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to create job', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to create job', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -308,8 +311,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to update job', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to update job', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -339,8 +343,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to delete job', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to delete job', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -411,8 +416,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to update job status', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to update job status', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -427,8 +433,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get companies', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get companies', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -448,8 +455,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get company', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get company', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -483,8 +491,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to create company', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to create company', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -515,8 +524,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to update company', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to update company', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -534,8 +544,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to delete company', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to delete company', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -564,8 +575,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get overview stats', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get overview stats', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -575,7 +587,7 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       const jobData = jobs.map(entity => entity.data);
 
       // Group applications by week
-      const applicationsByWeek = {};
+      const applicationsByWeek: Record<string, number> = {};
       jobData.forEach(job => {
         if (job.applicationDate) {
           const week = this.getWeekKey(new Date(job.applicationDate));
@@ -592,8 +604,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get timeline stats', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get timeline stats', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -657,8 +670,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to upload file', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to upload file', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -677,8 +691,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to get job files', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get job files', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 
@@ -711,8 +726,9 @@ export default class JobTrackerBasicModule implements ModuleBackend {
       });
 
     } catch (error) {
-      this.logger.error('Failed to delete file', { error: error.message });
-      res.status(500).json({ success: false, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to delete file', { error: message });
+      res.status(500).json({ success: false, error: message });
     }
   }
 }

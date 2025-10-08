@@ -115,7 +115,8 @@ export class SQLiteService {
       this.saveDatabase();
 
     } catch (error) {
-      this.logger.error('Failed to initialize SQLite service', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to initialize SQLite service', { error: message });
       throw error;
     }
   }
@@ -215,7 +216,8 @@ export class SQLiteService {
 
       this.logger.info('Database tables created successfully');
     } catch (error) {
-      this.logger.error('Failed to create tables', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to create tables', { error: message });
       throw error;
     }
   }
@@ -228,7 +230,8 @@ export class SQLiteService {
       writeFileSync(this.dbPath, data);
       this.logger.debug('Database saved to disk', { path: this.dbPath });
     } catch (error) {
-      this.logger.error('Failed to save database', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to save database', { error: message });
     }
   }
 
@@ -248,9 +251,10 @@ export class SQLiteService {
         };
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         connected: false,
-        error: error.message
+        error: message
       };
     }
   }
@@ -268,7 +272,8 @@ export class SQLiteService {
 
       return tables.length === 4; // All 4 tables should exist
     } catch (error) {
-      this.logger.error('Failed to check tables', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to check tables', { error: message });
       return false;
     }
   }
@@ -310,7 +315,8 @@ export class SQLiteService {
         updatedAt: now
       };
     } catch (error) {
-      this.logger.error('Failed to create job', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to create job', { error: message });
       throw error;
     } finally {
       stmt.free();
@@ -354,7 +360,8 @@ export class SQLiteService {
 
       return jobs;
     } catch (error) {
-      this.logger.error('Failed to get jobs', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get jobs', { error: message });
       throw error;
     }
   }
@@ -468,7 +475,8 @@ export class SQLiteService {
 
       return null;
     } catch (error) {
-      this.logger.error('Failed to update job', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to update job', { error: message });
       throw error;
     } finally {
       stmt.free();
@@ -547,6 +555,7 @@ export class SQLiteService {
 
       console.log(`Status change recorded: ${fromStatus} → ${toStatus} for job ${jobId}`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       console.error('Failed to record status change:', error);
     } finally {
       insertStmt.free();
@@ -563,7 +572,8 @@ export class SQLiteService {
       this.saveDatabase();
       return true;
     } catch (error) {
-      this.logger.error('Failed to delete job', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to delete job', { error: message });
       return false;
     } finally {
       stmt.free();
@@ -600,7 +610,8 @@ export class SQLiteService {
 
       return stats;
     } catch (error) {
-      this.logger.error('Failed to get stats', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get stats', { error: message });
       throw error;
     }
   }
@@ -614,7 +625,8 @@ export class SQLiteService {
         await this.createJob(job)
         imported++
       } catch (error: any) {
-        errors.push(`Failed to import job "${job.title}": ${error.message}`)
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Failed to import job "${job.title}": ${message}`)
       }
     }
 
@@ -647,7 +659,8 @@ export class SQLiteService {
 
       return files;
     } catch (error) {
-      this.logger.error('Failed to get job files', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get job files', { error: message });
       return [];
     }
   }
@@ -675,7 +688,8 @@ export class SQLiteService {
 
       return history;
     } catch (error) {
-      this.logger.error('Failed to get job status history', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get job status history', { error: message });
       return [];
     }
   }
@@ -719,7 +733,8 @@ export class SQLiteService {
         uploadedAt: fileData.uploadedAt
       };
     } catch (error) {
-      this.logger.error('Failed to add job file', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to add job file', { error: message });
       throw error;
     }
   }
@@ -750,7 +765,8 @@ export class SQLiteService {
       stmt.free();
       return null;
     } catch (error) {
-      this.logger.error('Failed to get job file', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get job file', { error: message });
       return null;
     }
   }
@@ -766,7 +782,8 @@ export class SQLiteService {
 
       return changes > 0;
     } catch (error) {
-      this.logger.error('Failed to delete job file', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to delete job file', { error: message });
       return false;
     }
   }
@@ -803,7 +820,8 @@ export class SQLiteService {
         note: historyEntry.note
       };
     } catch (error) {
-      this.logger.error('Failed to add status history', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to add status history', { error: message });
       throw error;
     }
   }
@@ -831,7 +849,8 @@ export class SQLiteService {
 
       return history;
     } catch (error) {
-      this.logger.error('Failed to get status history', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get status history', { error: message });
       return [];
     }
   }
@@ -848,7 +867,8 @@ export class SQLiteService {
       this.saveDatabase();
       return changes > 0;
     } catch (error) {
-      this.logger.error('Failed to delete status history', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to delete status history', { error: message });
       return false;
     }
   }
@@ -886,7 +906,8 @@ export class SQLiteService {
         };
       }
     } catch (error) {
-      this.logger.error('Failed to get stage timestamps', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to get stage timestamps', { error: message });
       return {
         job_id: jobId,
         applied_at: null,
@@ -953,7 +974,8 @@ export class SQLiteService {
 
       this.saveDatabase();
     } catch (error) {
-      this.logger.error('Failed to update stage timestamp', { error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to update stage timestamp', { error: message });
     }
   }
 

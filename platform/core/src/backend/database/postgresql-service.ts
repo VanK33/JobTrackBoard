@@ -502,7 +502,7 @@ export class PostgreSQLService {
     const client = await this.pool.connect()
     try {
       const result = await client.query('DELETE FROM job_files WHERE id = $1', [fileId])
-      return result.rowCount > 0
+      return (result.rowCount !== null && result.rowCount > 0)
     } finally {
       client.release()
     }
@@ -604,7 +604,7 @@ export class PostgreSQLService {
     const client = await this.pool.connect()
     try {
       const result = await client.query('DELETE FROM job_status_history WHERE id = $1', [historyId])
-      return result.rowCount > 0
+      return (result.rowCount !== null && result.rowCount > 0)
     } finally {
       client.release()
     }
@@ -742,6 +742,37 @@ export class PostgreSQLService {
     }
 
     return progress
+  }
+
+  async getStats(): Promise<Record<string, number>> {
+    if (!this.pool) throw new Error('Database not connected');
+
+    try {
+      const result = await this.pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'interested') as interested,
+          COUNT(*) FILTER (WHERE status = 'applied') as applied,
+          COUNT(*) FILTER (WHERE status = 'interviewing') as interviewing,
+          COUNT(*) FILTER (WHERE status = 'offered') as offered,
+          COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+          COUNT(*) as total
+        FROM jobs
+      `);
+
+      const row = result.rows[0];
+      return {
+        interested: parseInt(row.interested) || 0,
+        applied: parseInt(row.applied) || 0,
+        interviewing: parseInt(row.interviewing) || 0,
+        offered: parseInt(row.offered) || 0,
+        rejected: parseInt(row.rejected) || 0,
+        total: parseInt(row.total) || 0,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Failed to get stats:', message);
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {

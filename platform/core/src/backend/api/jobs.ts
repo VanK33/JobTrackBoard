@@ -125,7 +125,7 @@ router.put('/api/jobs/:id', requireDatabaseConfig, async (req: Request, res: Res
     // Convert frontend updates to backend format
     const backendUpdates = DataMapper.frontendToBackend(frontendUpdates);
 
-    const updatedJob = await dbService.updateJob(jobId as any, backendUpdates);
+    const updatedJob = await dbService.updateJob(jobId, backendUpdates);
 
     if (updatedJob) {
       // Convert back to frontend format for response
@@ -146,7 +146,7 @@ router.delete('/api/jobs/:id', requireDatabaseConfig, async (req: Request, res: 
   try {
     const dbService = await ConnectionPoolManager.getConnection(req.dbConfig!);
     const jobId = parseInt(req.params.id);
-    const success = await dbService.deleteJob(jobId as any);
+    const success = await dbService.deleteJob(jobId);
 
     if (success) {
       logger.info('Job deleted', { id: jobId });
@@ -253,7 +253,7 @@ router.patch('/api/jobs/:id/status', requireDatabaseConfig, async (req: Request,
     const jobId = parseInt(req.params.id);
     const { status } = req.body;
 
-    const updatedJob = await dbService.updateJob(jobId as any, { status } as any);
+    const updatedJob = await dbService.updateJob(String(jobId), { status });
 
     if (updatedJob) {
       // Convert to frontend format

@@ -73,6 +73,8 @@ interface FilterState {
   location: string[]
 }
 
+type OpenFilterType = 'status' | 'location' | null
+
 interface JobDashboardProps {
   onNavigateToSettings?: () => void
 }
@@ -123,8 +125,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     status: [],
     location: []
   })
-  const [showStatusFilter, setShowStatusFilter] = useState(false)
-  const [showLocationFilter, setShowLocationFilter] = useState(false)
+  const [openFilter, setOpenFilter] = useState<OpenFilterType>(null)
 
   // Preview system state
   const [previewState, setPreviewState] = useState<PreviewState>({
@@ -138,6 +139,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
   const previewTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const hideTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+  const filterCloseTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
   const detailTitleRef = React.useRef<HTMLHeadingElement>(null)
   const jobRefs = React.useRef<{[key: string]: HTMLDivElement | null}>({})
@@ -323,6 +325,15 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     }
   }, [filters])
 
+  // Cleanup filter close timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (filterCloseTimeoutRef.current) {
+        clearTimeout(filterCloseTimeoutRef.current)
+      }
+    }
+  }, [])
+
   // Use jobs directly from database (empty array when no data)
   const displayJobs = jobs
 
@@ -488,6 +499,32 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     setEditForm(null)
     setHasUnsavedChanges(false)
     setShowUnsavedDialog(false)
+  }
+
+  // Filter hover handlers
+  const cancelCloseTimeout = () => {
+    // Clear any pending close timeout
+    if (filterCloseTimeoutRef.current) {
+      clearTimeout(filterCloseTimeoutRef.current)
+      filterCloseTimeoutRef.current = null
+    }
+  }
+
+  const handleOpenStatus = () => {
+    cancelCloseTimeout()
+    setOpenFilter('status')
+  }
+
+  const handleOpenLocation = () => {
+    cancelCloseTimeout()
+    setOpenFilter('location')
+  }
+
+  const handleCloseFilter = () => {
+    // Add 500ms delay before closing
+    filterCloseTimeoutRef.current = setTimeout(() => {
+      setOpenFilter(null)
+    }, 500)
   }
 
   // New Application Handlers
@@ -1796,6 +1833,153 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
           {/* Sort and Filter Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+            {/* Status Filter */}
+            <div style={{ position: 'relative' }} onMouseLeave={handleCloseFilter}>
+              <button
+                onMouseEnter={handleOpenStatus}
+                onClick={() => setOpenFilter(openFilter === 'status' ? null : 'status')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '14px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  backgroundColor: filters.status.length > 0 ? '#f0f0f0' : '#fff',
+                  cursor: 'pointer',
+                  fontWeight: filters.status.length > 0 ? '600' : '400',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                aria-label="Filter by status"
+                aria-expanded={openFilter === 'status'}
+              >
+                Status
+                {filters.status.length > 0 && (
+                  <span style={{
+                    backgroundColor: '#000',
+                    color: '#fff',
+                    borderRadius: '50%',
+                    padding: '2px 6px',
+                    fontSize: '11px',
+                    minWidth: '18px',
+                    textAlign: 'center'
+                  }}>
+                    {filters.status.length}
+                  </span>
+                )}
+              </button>
+              {openFilter === 'status' && (
+                <div
+                  onMouseEnter={cancelCloseTimeout}
+                  style={{
+                    position: 'absolute',
+                    backgroundColor: '#fff',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '4px',
+                    padding: '12px',
+                    marginTop: '4px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    zIndex: 1000,
+                    minWidth: '200px'
+                  }}>
+                  {statusOrder.map(status => (
+                    <label key={status} style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={filters.status.includes(status)}
+                        onChange={(e) => {
+                          const newStatus = e.target.checked
+                            ? [...filters.status, status]
+                            : filters.status.filter(s => s !== status)
+                          setFilters({ ...filters, status: newStatus })
+                        }}
+                        style={{ marginRight: '8px' }}
+                      />
+                      <span style={{ textTransform: 'capitalize' }}>
+                        {statusLabels[status as keyof typeof statusLabels]}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Location Filter */}
+            <div style={{ position: 'relative' }} onMouseLeave={handleCloseFilter}>
+              <button
+                onMouseEnter={handleOpenLocation}
+                onClick={() => setOpenFilter(openFilter === 'location' ? null : 'location')}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '14px',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  backgroundColor: filters.location.length > 0 ? '#f0f0f0' : '#fff',
+                  cursor: 'pointer',
+                  fontWeight: filters.location.length > 0 ? '600' : '400',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                aria-label="Filter by location"
+                aria-expanded={openFilter === 'location'}
+              >
+                Location
+                {filters.location.length > 0 && (
+                  <span style={{
+                    backgroundColor: '#000',
+                    color: '#fff',
+                    borderRadius: '50%',
+                    padding: '2px 6px',
+                    fontSize: '11px',
+                    minWidth: '18px',
+                    textAlign: 'center'
+                  }}>
+                    {filters.location.length}
+                  </span>
+                )}
+              </button>
+              {openFilter === 'location' && (
+                <div
+                  onMouseEnter={cancelCloseTimeout}
+                  style={{
+                    position: 'absolute',
+                    backgroundColor: '#fff',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '4px',
+                    padding: '12px',
+                    marginTop: '4px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    zIndex: 1000,
+                    minWidth: '200px'
+                  }}>
+                  {uniqueLocations.length > 0 ? (
+                    uniqueLocations.map(location => (
+                      <label key={location} style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={filters.location.includes(location)}
+                          onChange={(e) => {
+                            const newLocation = e.target.checked
+                              ? [...filters.location, location]
+                              : filters.location.filter(l => l !== location)
+                            setFilters({ ...filters, location: newLocation })
+                          }}
+                          style={{ marginRight: '8px' }}
+                        />
+                        <span>{location}</span>
+                      </label>
+                    ))
+                  ) : (
+                    <div style={{ color: '#999', fontSize: '13px' }}>No locations available</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Spacer to push Sort to the right */}
+            <div style={{ flex: 1 }}></div>
+
             {/* Sort Dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <label htmlFor="sort-select" style={{ fontSize: '14px', color: '#666', fontWeight: '500' }}>
@@ -1822,144 +2006,6 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                 <option value="location">Location A-Z</option>
                 <option value="company">Company A-Z</option>
               </select>
-            </div>
-
-            {/* Status Filter */}
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowStatusFilter(!showStatusFilter)}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '14px',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '4px',
-                  backgroundColor: filters.status.length > 0 ? '#f0f0f0' : '#fff',
-                  cursor: 'pointer',
-                  fontWeight: filters.status.length > 0 ? '600' : '400',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                aria-label="Filter by status"
-                aria-expanded={showStatusFilter}
-              >
-                Status
-                {filters.status.length > 0 && (
-                  <span style={{
-                    backgroundColor: '#000',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    padding: '2px 6px',
-                    fontSize: '11px',
-                    minWidth: '18px',
-                    textAlign: 'center'
-                  }}>
-                    {filters.status.length}
-                  </span>
-                )}
-              </button>
-              {showStatusFilter && (
-                <div style={{
-                  position: 'absolute',
-                  backgroundColor: '#fff',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '4px',
-                  padding: '12px',
-                  marginTop: '4px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  zIndex: 1000,
-                  minWidth: '200px'
-                }}>
-                  {statusOrder.map(status => (
-                    <label key={status} style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={filters.status.includes(status)}
-                        onChange={(e) => {
-                          const newStatus = e.target.checked
-                            ? [...filters.status, status]
-                            : filters.status.filter(s => s !== status)
-                          setFilters({ ...filters, status: newStatus })
-                        }}
-                        style={{ marginRight: '8px' }}
-                      />
-                      <span style={{ textTransform: 'capitalize' }}>
-                        {statusLabels[status as keyof typeof statusLabels]}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Location Filter */}
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowLocationFilter(!showLocationFilter)}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '14px',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '4px',
-                  backgroundColor: filters.location.length > 0 ? '#f0f0f0' : '#fff',
-                  cursor: 'pointer',
-                  fontWeight: filters.location.length > 0 ? '600' : '400',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                aria-label="Filter by location"
-                aria-expanded={showLocationFilter}
-              >
-                Location
-                {filters.location.length > 0 && (
-                  <span style={{
-                    backgroundColor: '#000',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    padding: '2px 6px',
-                    fontSize: '11px',
-                    minWidth: '18px',
-                    textAlign: 'center'
-                  }}>
-                    {filters.location.length}
-                  </span>
-                )}
-              </button>
-              {showLocationFilter && (
-                <div style={{
-                  position: 'absolute',
-                  backgroundColor: '#fff',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '4px',
-                  padding: '12px',
-                  marginTop: '4px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  zIndex: 1000,
-                  minWidth: '200px'
-                }}>
-                  {uniqueLocations.length > 0 ? (
-                    uniqueLocations.map(location => (
-                      <label key={location} style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={filters.location.includes(location)}
-                          onChange={(e) => {
-                            const newLocation = e.target.checked
-                              ? [...filters.location, location]
-                              : filters.location.filter(l => l !== location)
-                            setFilters({ ...filters, location: newLocation })
-                          }}
-                          style={{ marginRight: '8px' }}
-                        />
-                        <span>{location}</span>
-                      </label>
-                    ))
-                  ) : (
-                    <div style={{ color: '#999', fontSize: '13px' }}>No locations available</div>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* Clear All Button */}

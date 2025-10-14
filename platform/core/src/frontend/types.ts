@@ -72,3 +72,10 @@ export interface DatabaseStatus {
   error?: string
   tablesInitialized?: boolean
 }
+
+// Named Connection Types (Feature 014)
+export interface NamedConnection {
+  name: string
+  connectionString: string
+  createdAt?: string
+}

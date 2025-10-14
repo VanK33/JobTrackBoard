@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { DatabaseConfig, DatabaseProvider, DatabaseStatus } from '../types'
+import { DatabaseConfig, DatabaseProvider, DatabaseStatus, NamedConnection } from '../types'
 import { apiClient, getStoredDatabaseConfig, storeDatabaseConfig } from '../utils/api-client'
 import TutorialModal from '../components/TutorialModal'
+import {
+  loadNamedConnections,
+  maskConnectionString,
+  saveNamedConnection,
+  deleteNamedConnection,
+  renameNamedConnection
+} from '../utils/connectionUtils'
 
 interface DatabaseSettingsProps {
   onNavigateBack?: () => void
@@ -31,6 +38,18 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
   const [connectionStringHistory, setConnectionStringHistory] = useState<string[]>([])
   const [showTutorialModal, setShowTutorialModal] = useState(false)
   const [showAdvancedFields, setShowAdvancedFields] = useState(false)
+
+  // T008: Named connection state
+  const [connectionName, setConnectionName] = useState<string>('')
+  const [savedConnections, setSavedConnections] = useState<NamedConnection[]>([])
+  const [saveError, setSaveError] = useState<string>('')
+  const [editingConnection, setEditingConnection] = useState<NamedConnection | null>(null)
+  const [newName, setNewName] = useState<string>('')
+
+  // UI improvements: edit modal & drag-drop
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editModalData, setEditModalData] = useState<{ name: string; connectionString: string } | null>(null)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
   // Utility function to parse connection string and detect database type
   const parseConnectionString = (connectionString: string): DatabaseConfig['type'] | null => {
@@ -89,21 +108,12 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
     }
   ]
 
-  // Load saved config from localStorage only
+  // Load saved config and named connections from localStorage
   useEffect(() => {
     const loadConfig = async () => {
-      // Load connection string history
-      const historyKey = 'databaseConnectionHistory'
-      const savedHistory = localStorage.getItem(historyKey)
-      let history: string[] = []
-      if (savedHistory) {
-        try {
-          history = JSON.parse(savedHistory)
-          setConnectionStringHistory(history)
-        } catch (error) {
-          console.warn('Failed to load connection string history:', error)
-        }
-      }
+      // T003: Load named connections (auto-migrates legacy format)
+      const connections = loadNamedConnections()
+      setSavedConnections(connections)
 
       // Load config from localStorage
       const savedConfig = getStoredDatabaseConfig()
@@ -112,12 +122,7 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         if (savedConfig.connectionString) {
           setUseConnectionString(true)
           setSavedConnectionString(savedConfig.connectionString)
-        } else if (history.length > 0) {
-          setSavedConnectionString(history[0])
         }
-      } else if (history.length > 0) {
-        // No saved config but we have history, use the most recent connection string
-        setSavedConnectionString(history[0])
       }
     }
 
@@ -131,21 +136,12 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         [field]: value
       }
 
-      // Auto-detect database type from connection string
+      // T009: Auto-detect database type from connection string (keep this logic)
+      // BUT remove auto-save behavior (removed lines 141-148)
       if (field === 'connectionString' && useConnectionString) {
         const detectedType = parseConnectionString(value)
         if (detectedType) {
           newConfig.type = detectedType
-        }
-        // Save the connection string for future use and update history
-        if (value) {
-          setSavedConnectionString(value)
-          // Update connection string history
-          setConnectionStringHistory(prev => {
-            const newHistory = [value, ...prev.filter(s => s !== value)].slice(0, 5) // Keep last 5
-            localStorage.setItem('databaseConnectionHistory', JSON.stringify(newHistory))
-            return newHistory
-          })
         }
       }
 
@@ -155,6 +151,9 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const saveConfig = async () => {
     try {
+      // T013: Clear any previous error
+      setSaveError('')
+
       // Clean config: when using connection string, clear individual fields
       const cleanConfig = config.connectionString
         ? {
@@ -165,11 +164,29 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           }
         : config
 
+      // T013: Save named connection if using connection string
+      if (config.connectionString) {
+        try {
+          const updated = saveNamedConnection(
+            connectionName,
+            config.connectionString,
+            savedConnections
+          )
+          setSavedConnections(updated)
+          // Clear connection name input after successful save
+          setConnectionName('')
+        } catch (error) {
+          // Display validation error
+          setSaveError(error instanceof Error ? error.message : 'Failed to save connection')
+          return // Don't save config if connection saving failed
+        }
+      }
+
       // Save to localStorage only - no server persistence
       storeDatabaseConfig(cleanConfig)
       alert('Database configuration saved to browser! All API requests will use this database.')
     } catch (error) {
-      alert(`Failed to save configuration: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setSaveError(`Failed to save configuration: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -183,6 +200,98 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
 
   const handleToggleAdvancedFields = () => {
     setShowAdvancedFields(prev => !prev)
+  }
+
+  // T011: Delete connection handler
+  const handleDeleteConnection = (name: string) => {
+    try {
+      const updated = deleteNamedConnection(name, savedConnections)
+      setSavedConnections(updated)
+    } catch (error) {
+      alert(`Failed to delete connection: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // T012: Rename connection handler
+  const handleRenameConnection = (oldName: string, newNameValue: string) => {
+    try {
+      const updated = renameNamedConnection(oldName, newNameValue, savedConnections)
+      setSavedConnections(updated)
+      setEditingConnection(null)
+      setNewName('')
+    } catch (error) {
+      alert(`Failed to rename connection: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Edit modal handlers
+  const handleOpenEditModal = (conn: NamedConnection) => {
+    setEditModalData({ name: conn.name, connectionString: conn.connectionString })
+    setShowEditModal(true)
+  }
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false)
+    setEditModalData(null)
+  }
+
+  const handleSaveEdit = () => {
+    if (!editModalData) return
+
+    try {
+      // Find the original connection
+      const originalConn = savedConnections.find(c => c.connectionString === editModalData.connectionString)
+      if (!originalConn) return
+
+      // Update both name and connection string
+      const updated = savedConnections.map(c => {
+        if (c === originalConn) {
+          return { ...c, name: editModalData.name.trim() || maskConnectionString(editModalData.connectionString), connectionString: editModalData.connectionString }
+        }
+        return c
+      })
+
+      // Save to localStorage
+      try {
+        localStorage.setItem('namedDatabaseConnections', JSON.stringify(updated))
+        setSavedConnections(updated)
+        handleCloseEditModal()
+      } catch (error) {
+        alert('Failed to save changes')
+      }
+    } catch (error) {
+      alert(`Failed to update connection: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Drag and drop handlers
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index)
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedIndex === null || draggedIndex === index) return
+
+    const updated = [...savedConnections]
+    const draggedItem = updated[draggedIndex]
+    updated.splice(draggedIndex, 1)
+    updated.splice(index, 0, draggedItem)
+
+    setSavedConnections(updated)
+    setDraggedIndex(index)
+  }
+
+  const handleDragEnd = () => {
+    if (draggedIndex !== null) {
+      // Save reordered connections to localStorage
+      try {
+        localStorage.setItem('namedDatabaseConnections', JSON.stringify(savedConnections))
+      } catch (error) {
+        console.error('Failed to save reordered connections:', error)
+      }
+    }
+    setDraggedIndex(null)
   }
 
   const testConnection = async () => {
@@ -625,6 +734,39 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
           {/* Connection String Input (shown when Advanced is hidden) */}
           {!showAdvancedFields && (
             <div style={{ marginBottom: '16px' }}>
+              {/* T008: Connection Name Input */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '4px'
+                }}>
+                  Connection Name (optional)
+                </label>
+                <input
+                  type="text"
+                  value={connectionName}
+                  onChange={(e) => setConnectionName(e.target.value)}
+                  placeholder="My Production Database"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                />
+                <p style={{
+                  margin: '4px 0 0 0',
+                  fontSize: '12px',
+                  color: '#6b7280'
+                }}>
+                  Give this connection a memorable name (if empty, will display masked connection string)
+                </p>
+              </div>
+
               <label style={{
                 display: 'block',
                 fontSize: '14px',
@@ -656,41 +798,148 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
                 Copy the complete connection string from your database provider
               </p>
 
-              {/* Connection String History */}
-              {connectionStringHistory.length > 0 && (
-                <div style={{ marginTop: '8px' }}>
+              {/* Saved Connections - Card Grid */}
+              {savedConnections.length > 0 && (
+                <div style={{ marginTop: '16px' }}>
                   <label style={{
                     display: 'block',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: '#6b7280',
-                    marginBottom: '4px'
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: '#374151',
+                    marginBottom: '8px'
                   }}>
-                    Recent Connection Strings:
+                    Saved Connections
                   </label>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleConfigChange('connectionString', e.target.value)
-                      }
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      backgroundColor: '#f9fafb'
-                    }}
-                  >
-                    <option value="">Select a previous connection...</option>
-                    {connectionStringHistory.map((connStr, index) => (
-                      <option key={index} value={connStr}>
-                        {connStr.substring(0, 50)}{connStr.length > 50 ? '...' : ''}
-                      </option>
+                  <div style={{
+                    backgroundColor: '#f9fafb',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb'
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                      gap: '10px',
+                      maxWidth: '600px'
+                    }}>
+                    {savedConnections.map((conn, index) => (
+                      <div
+                        key={index}
+                        draggable
+                        onDragStart={() => handleDragStart(index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragEnd={handleDragEnd}
+                        onClick={() => {
+                          handleConfigChange('connectionString', conn.connectionString)
+                          setConnectionName(conn.name)
+                        }}
+                        style={{
+                          backgroundColor: 'white',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '6px',
+                          padding: '10px 12px',
+                          cursor: 'move',
+                          transition: 'all 0.2s ease',
+                          boxShadow: draggedIndex === index ? '0 4px 12px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.08)',
+                          opacity: draggedIndex === index ? 0.5 : 1,
+                          minHeight: '44px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (draggedIndex !== index) {
+                            e.currentTarget.style.borderColor = '#3b82f6'
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(59,130,246,0.15)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (draggedIndex !== index) {
+                            e.currentTarget.style.borderColor = '#e5e7eb'
+                            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)'
+                          }
+                        }}
+                      >
+                        <div style={{
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          color: '#111827',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                          marginRight: '8px'
+                        }}>
+                          {conn.name}
+                        </div>
+                        <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenEditModal(conn)
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'background-color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f3f4f6'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
+                            title="Edit connection"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (confirm(`Delete connection "${conn.name}"?`)) {
+                                handleDeleteConnection(conn.name)
+                              }
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'background-color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#fee2e2'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
+                            title="Delete connection"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
                     ))}
-                  </select>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -867,6 +1116,21 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
             </label>
           </div>
 
+          {/* T013: Error Display */}
+          {saveError && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              color: '#991b1b',
+              fontSize: '14px'
+            }}>
+              {saveError}
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div style={{
             display: 'flex',
@@ -914,6 +1178,196 @@ const DatabaseSettings: React.FC<DatabaseSettingsProps> = ({ onNavigateBack }) =
         isOpen={showTutorialModal}
         onClose={handleCloseTutorial}
       />
+
+      {/* Edit Connection Modal */}
+      {showEditModal && editModalData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}
+        onClick={handleCloseEditModal}
+        >
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            width: '90%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '20px'
+            }}>
+              <h3 style={{
+                margin: 0,
+                fontSize: '18px',
+                fontWeight: '600',
+                color: '#111827'
+              }}>
+                Edit Connection
+              </h3>
+              <button
+                onClick={handleCloseEditModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f3f4f6'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#374151',
+                marginBottom: '6px'
+              }}>
+                Connection Name
+              </label>
+              <input
+                type="text"
+                value={editModalData.name}
+                onChange={(e) => setEditModalData({ ...editModalData, name: e.target.value })}
+                placeholder="My Database"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'border-color 0.15s ease'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#3b82f6'
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#d1d5db'
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#374151',
+                marginBottom: '6px'
+              }}>
+                Connection String
+              </label>
+              <input
+                type="password"
+                value={editModalData.connectionString}
+                onChange={(e) => setEditModalData({ ...editModalData, connectionString: e.target.value })}
+                placeholder="postgresql://username:password@host:port/database"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  outline: 'none',
+                  transition: 'border-color 0.15s ease'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#3b82f6'
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#d1d5db'
+                }}
+              />
+            </div>
+
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                onClick={handleCloseEditModal}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'white',
+                  color: '#6b7280',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f9fafb'
+                  e.currentTarget.style.borderColor = '#9ca3af'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'white'
+                  e.currentTarget.style.borderColor = '#d1d5db'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#2563eb'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#3b82f6'
+                }}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

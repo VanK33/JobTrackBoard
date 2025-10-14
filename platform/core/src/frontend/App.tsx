@@ -8,6 +8,8 @@ import DatabaseSettings from './pages/DatabaseSettings'
 import Header from './components/Header'
 import { ModuleInfo, InstalledModule } from './types'
 import { getStoredDatabaseConfig } from './utils/api-client'
+import TutorialModal from './components/TutorialModal'
+import { useTutorialState } from './hooks/useTutorialState'
 
 function App() {
   const [view, setView] = useState<'store' | 'workspace' | 'minimalist' | 'dashboard' | 'settings'>('dashboard')
@@ -15,6 +17,17 @@ function App() {
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([])
   const [loading, setLoading] = useState(true)
   const [needsDatabaseSetup, setNeedsDatabaseSetup] = useState(false)
+
+  // Tutorial state management (T004: auto-trigger logic)
+  const { hasSeen, markAsSeen } = useTutorialState()
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  // T004: Auto-trigger tutorial on first login
+  useEffect(() => {
+    if (!hasSeen && !loading && !needsDatabaseSetup) {
+      setShowTutorial(true)
+    }
+  }, [hasSeen, loading, needsDatabaseSetup])
 
   useEffect(() => {
     console.log('🚀 App component mounted, checking database config...')
@@ -99,6 +112,12 @@ function App() {
     }
   }
 
+  // T004: Tutorial close handler
+  const handleTutorialClose = () => {
+    markAsSeen() // FR-012b: Prevent re-trigger
+    setShowTutorial(false)
+  }
+
   // Show database setup page if not configured
   if (needsDatabaseSetup) {
     return (
@@ -176,6 +195,38 @@ function App() {
           onUninstall={handleUninstallModule}
         />
       )}
+
+      {/* T004: Tutorial modal with auto-trigger */}
+      <TutorialModal
+        isOpen={showTutorial}
+        onClose={handleTutorialClose}
+      />
+
+      {/* T005: Manual trigger button (bottom-right corner) */}
+      <button
+        onClick={() => setShowTutorial(true)}
+        aria-label="Open tutorial"
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          padding: '12px 24px',
+          backgroundColor: '#3b82f6',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontSize: '16px',
+          fontWeight: '500',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          zIndex: 999,
+          transition: 'background-color 0.2s'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
+      >
+        Tutorial
+      </button>
     </div>
   )
 }

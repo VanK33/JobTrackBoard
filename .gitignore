@@ -125,6 +125,10 @@ playwright/.cache/
 *.sqlite
 *.sqlite3
 
+# Database configuration files (sensitive)
+database-config.json
+platform/core/database-config.json
+
 # Backup files
 *.bak
 *.backup

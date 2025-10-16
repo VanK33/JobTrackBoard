@@ -1,0 +1,451 @@
+openapi: 3.0.3
+info:
+  title: Job Status Consolidation API
+  description: API contract for Feature 017 - 2-minute consolidation window for job status updates
+  version: 1.0.0
+
+paths:
+  /api/jobs/{id}/status:
+    patch:
+      summary: Update job status (with consolidation window support)
+      description: |
+        Updates the job status. Implements 2-minute consolidation window:
+        - First update: Starts new consolidation window (if no active window)
+        - Subsequent updates: Adds to existing window (timer does NOT reset)
+        - Lazy consolidation: Checks for expired windows before processing update
+
+        Response includes active consolidation window info for frontend timer.
+      operationId: updateJobStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Job ID
+        - name: x-database-config
+          in: header
+          required: true
+          schema:
+            type: string
+            format: base64
+          description: Base64-encoded database configuration (session-based architecture)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [applied, screening, interview, offered, rejected]
+                  description: New status value
+            example:
+              status: "screening"
+      responses:
+        '200':
+          description: Job status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobWithWindow'
+              examples:
+                activeWindow:
+                  summary: Update within active consolidation window
+                  value:
+                    id: 123
+                    title: "Software Engineer"
+                    company: "TechCorp"
+                    status: "screening"
+                    statusHistory:
+                      - id: 456
+                        jobId: 123
+                        status: "applied"
+                        changedAt: "2025-10-15T10:00:00.000Z"
+                        consolidationWindowId: 789
+                      - id: 457
+                        jobId: 123
+                        status: "screening"
+                        changedAt: "2025-10-15T10:00:30.000Z"
+                        consolidationWindowId: 789
+                    consolidationWindow:
+                      id: 789
+                      jobId: 123
+                      windowStartTime: 1697360400000
+                      windowEndTime: 1697360520000
+                      firstStatus: "applied"
+                      isActive: true
+                      remainingMs: 90000
+                noWindow:
+                  summary: Update after window expired (consolidated)
+                  value:
+                    id: 123
+                    title: "Software Engineer"
+                    company: "TechCorp"
+                    status: "interview"
+                    statusHistory:
+                      - id: 458
+                        jobId: 123
+                        status: "screening"
+                        changedAt: "2025-10-15T10:02:00.000Z"
+                        consolidationWindowId: null
+                      - id: 459
+                        jobId: 123
+                        status: "interview"
+                        changedAt: "2025-10-15T10:05:00.000Z"
+                        consolidationWindowId: 790
+                    consolidationWindow:
+                      id: 790
+                      jobId: 123
+                      windowStartTime: 1697360700000
+                      windowEndTime: 1697360820000
+                      firstStatus: "interview"
+                      isActive: true
+                      remainingMs: 120000
+        '400':
+          description: Invalid request (missing status or invalid value)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs/{id}:
+    put:
+      summary: Update job (full update with consolidation support)
+      description: |
+        Updates job fields including status. Same consolidation logic as PATCH /api/jobs/{id}/status.
+      operationId: updateJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: x-database-config
+          in: header
+          required: true
+          schema:
+            type: string
+            format: base64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobUpdate'
+      responses:
+        '200':
+          description: Job updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobWithWindow'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/jobs/{id}/consolidation-status:
+    get:
+      summary: Get active consolidation window status (optional endpoint)
+      description: |
+        Returns active consolidation window info for a job (if exists).
+        Used by frontend to recover window state after page reload.
+      operationId: getConsolidationStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: x-database-config
+          in: header
+          required: true
+          schema:
+            type: string
+            format: base64
+      responses:
+        '200':
+          description: Consolidation window status
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConsolidationWindowWithRemaining'
+                  - type: object
+                    properties:
+                      consolidationWindow:
+                        type: null
+                    description: No active window
+              examples:
+                activeWindow:
+                  summary: Active consolidation window exists
+                  value:
+                    consolidationWindow:
+                      id: 789
+                      jobId: 123
+                      windowStartTime: 1697360400000
+                      windowEndTime: 1697360520000
+                      firstStatus: "applied"
+                      isActive: true
+                      remainingMs: 45000
+                noWindow:
+                  summary: No active window
+                  value:
+                    consolidationWindow: null
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  schemas:
+    Job:
+      type: object
+      required:
+        - id
+        - title
+        - company
+        - status
+      properties:
+        id:
+          type: integer
+          example: 123
+        title:
+          type: string
+          example: "Software Engineer"
+        company:
+          type: string
+          example: "TechCorp"
+        status:
+          type: string
+          enum: [applied, screening, interview, offered, rejected]
+          example: "applied"
+        location:
+          type: string
+          nullable: true
+          example: "San Francisco, CA"
+        url:
+          type: string
+          nullable: true
+          example: "https://techcorp.com/jobs/123"
+        notes:
+          type: string
+          nullable: true
+        statusHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusHistoryEntry'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobFile'
+
+    JobWithWindow:
+      allOf:
+        - $ref: '#/components/schemas/Job'
+        - type: object
+          properties:
+            consolidationWindow:
+              oneOf:
+                - $ref: '#/components/schemas/ConsolidationWindowWithRemaining'
+                - type: null
+              description: Active consolidation window (null if no active window)
+
+    JobUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        company:
+          type: string
+        status:
+          type: string
+          enum: [applied, screening, interview, offered, rejected]
+        location:
+          type: string
+        url:
+          type: string
+        notes:
+          type: string
+
+    StatusHistoryEntry:
+      type: object
+      required:
+        - id
+        - jobId
+        - status
+        - changedAt
+      properties:
+        id:
+          type: integer
+          example: 456
+        jobId:
+          type: integer
+          example: 123
+        status:
+          type: string
+          enum: [applied, screening, interview, offered, rejected]
+          example: "applied"
+        changedAt:
+          type: string
+          format: date-time
+          example: "2025-10-15T10:00:00.000Z"
+        operator:
+          type: string
+          nullable: true
+          example: "User"
+        note:
+          type: string
+          nullable: true
+        consolidationWindowId:
+          type: integer
+          nullable: true
+          example: 789
+          description: Links this entry to a consolidation window (null if no window)
+
+    ConsolidationWindow:
+      type: object
+      required:
+        - id
+        - jobId
+        - windowStartTime
+        - windowEndTime
+        - firstStatus
+        - isActive
+      properties:
+        id:
+          type: integer
+          example: 789
+        jobId:
+          type: integer
+          example: 123
+        windowStartTime:
+          type: integer
+          format: int64
+          example: 1697360400000
+          description: Unix timestamp (ms) when window started
+        windowEndTime:
+          type: integer
+          format: int64
+          example: 1697360520000
+          description: Fixed expiration time (windowStartTime + 120000)
+        firstStatus:
+          type: string
+          example: "applied"
+          description: Status when window started (for audit)
+        isActive:
+          type: boolean
+          example: true
+          description: Whether window is still active (false after consolidation)
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-10-15T10:00:00.000Z"
+
+    ConsolidationWindowWithRemaining:
+      allOf:
+        - $ref: '#/components/schemas/ConsolidationWindow'
+        - type: object
+          required:
+            - remainingMs
+          properties:
+            remainingMs:
+              type: integer
+              example: 90000
+              description: |
+                Milliseconds remaining until consolidation (calculated server-side).
+                Frontend uses this to set timer: setTimeout(consolidate, remainingMs)
+
+    JobFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        originalName:
+          type: string
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: "Job not found"
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes: {}
+
+# Contract Test Scenarios (to be implemented in tests/contract/)
+#
+# 1. Start Consolidation Window
+#    - PATCH /api/jobs/{id}/status with new status
+#    - Assert response.consolidationWindow.windowStartTime exists
+#    - Assert response.consolidationWindow.windowEndTime = windowStartTime + 120000
+#    - Assert response.consolidationWindow.isActive = true
+#
+# 2. Timer Fixed (Subsequent Update)
+#    - PATCH /api/jobs/{id}/status (first update at T=0)
+#    - Wait 30 seconds
+#    - PATCH /api/jobs/{id}/status (second update at T=30)
+#    - Assert response.consolidationWindow.windowStartTime unchanged
+#    - Assert response.consolidationWindow.windowEndTime unchanged
+#
+# 3. Lazy Consolidation (Expired Window)
+#    - Create job with status "applied"
+#    - Manually insert expired consolidation window (windowEndTime < Date.now())
+#    - Add 3 status history entries linked to expired window
+#    - PATCH /api/jobs/{id}/status with new status
+#    - Assert old window consolidated (only last entry remains)
+#    - Assert new consolidation window created for new update
+#
+# 4. Consolidation Window in Response
+#    - PATCH /api/jobs/{id}/status
+#    - Assert response includes consolidationWindow object
+#    - Assert remainingMs field present and > 0
+#    - Assert remainingMs <= 120000
+#
+# 5. No Window After Consolidation
+#    - Create consolidation window, wait 2 minutes
+#    - PATCH /api/jobs/{id}/status (triggers lazy consolidation)
+#    - Assert old window marked is_active = false
+#    - Assert new window created for new update

@@ -5,7 +5,7 @@
  * Key differences:
  * - Job.requirements: string[] (application format)
  * - JobRecord.requirements: string (database storage - newline-delimited)
- * - Job.id: string | number (polymorphic - Supabase UUID or SQLite number)
+ * - Job.id: string | number (polymorphic for PostgreSQL)
  * - JobRecord.id: number (always numeric in database)
  */
 
@@ -59,7 +59,7 @@ export function partialJobToJobRecord(
 
   // Convert id if present (string to number for database)
   if (updates.id !== undefined && typeof updates.id === 'string') {
-    // Skip string IDs (Supabase UUIDs) - they won't be used in SQLite updates
+    // Skip string IDs (UUIDs) - convert to number for PostgreSQL
     delete result.id;
   }
 

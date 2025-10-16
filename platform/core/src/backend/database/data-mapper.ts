@@ -47,7 +47,28 @@ export interface FrontendStatusHistory {
 }
 
 // Backend JobRecord interfaces
-import { JobRecord, JobFileRecord, StatusHistoryRecord } from './sqlite-service'
+import { JobRecord } from './postgresql-service'
+
+export interface JobFileRecord {
+  id: number
+  jobId: number
+  filename: string
+  originalName: string
+  fileSize?: number
+  mimeType?: string
+  filePath?: string
+  fileType?: string
+  uploadedAt: string
+}
+
+export interface StatusHistoryRecord {
+  id: number
+  jobId: number
+  status: string
+  changedAt: string
+  operator?: string
+  note?: string
+}
 
 export class DataMapper {
   /**

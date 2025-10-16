@@ -4,15 +4,14 @@
  * Allows multiple users to connect to different databases simultaneously
  */
 
-import { DatabaseConfig } from './sqlite-service'
-import { SQLiteService } from './sqlite-service'
+import { DatabaseConfig } from './postgresql-service'
 import { PostgreSQLService } from './postgresql-service'
 import { Logger } from '../utils/logger.js'
 
 const logger = new Logger('ConnectionPoolManager')
 
 interface PooledConnection {
-  service: SQLiteService | PostgreSQLService
+  service: PostgreSQLService
   lastUsed: Date
   connectionKey: string
 }
@@ -57,7 +56,7 @@ export class ConnectionPoolManager {
   /**
    * Get or create a database service for the given configuration
    */
-  static async getConnection(config: DatabaseConfig): Promise<SQLiteService | PostgreSQLService> {
+  static async getConnection(config: DatabaseConfig): Promise<PostgreSQLService> {
     const connectionKey = this.generateConnectionKey(config)
 
     // Check if we have an existing pooled connection
@@ -75,7 +74,7 @@ export class ConnectionPoolManager {
     })
 
     const databaseType = this.getDatabaseType(config)
-    let service: SQLiteService | PostgreSQLService
+    let service: PostgreSQLService
 
     if (databaseType === 'postgresql') {
       service = new PostgreSQLService()
@@ -85,11 +84,8 @@ export class ConnectionPoolManager {
         await service.connect(config)
       }
       await service.initialize()
-    } else if (databaseType === 'sqlite') {
-      service = new SQLiteService()
-      await service.initialize()
     } else {
-      throw new Error(`Unsupported database type: ${databaseType}`)
+      throw new Error(`Unsupported database type: ${databaseType}. Only PostgreSQL is supported.`)
     }
 
     // Store in pool
@@ -121,13 +117,10 @@ export class ConnectionPoolManager {
         const result = await pgService.testConnection(config)
         await pgService.disconnect()
         return result
-      } else if (databaseType === 'sqlite') {
-        const sqliteService = new SQLiteService()
-        return await sqliteService.testConnection(config)
       } else {
         return {
           connected: false,
-          error: `Unsupported database type: ${databaseType}`
+          error: `Unsupported database type: ${databaseType}. Only PostgreSQL is supported.`
         }
       }
     } catch (error: any) {

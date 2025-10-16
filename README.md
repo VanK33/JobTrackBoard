@@ -18,7 +18,7 @@ job_seek_app/
 
 - **Backend**: Node.js + Express + TypeScript
 - **Frontend**: React 18 + Vite 5 + TypeScript
-- **Database**: PostgreSQL/Supabase (with SQL.js fallback)
+- **Database**: PostgreSQL/Supabase
 - **Storage**: Supabase Storage (with local fallback)
 - **Architecture**: Session-based multi-tenant
 
@@ -45,14 +45,41 @@ The application will be available at:
 
 ### Database Setup
 
+**PostgreSQL Required**: This application requires a PostgreSQL database.
+
 On first run, configure your database through the UI:
 
 1. Open http://localhost:5173
-2. Choose database type (SQL.js, PostgreSQL, or Supabase)
+2. Choose PostgreSQL or Supabase
 3. Enter connection details
 4. Initialize database schema
 
 Database configuration is stored in browser localStorage and sent via headers with each request.
+
+#### PostgreSQL Setup Options
+
+**Option 1: Local PostgreSQL**
+```bash
+# Install PostgreSQL (macOS with Homebrew)
+brew install postgresql@15
+brew services start postgresql@15
+
+# Create database
+createdb job_tracker
+```
+
+**Option 2: Docker PostgreSQL**
+```bash
+docker run --name job-tracker-db \
+  -e POSTGRES_PASSWORD=password \
+  -e POSTGRES_DB=job_tracker \
+  -p 5432:5432 -d postgres:15
+```
+
+**Option 3: Supabase (Recommended for Production)**
+- Sign up at https://supabase.com
+- Create a new project
+- Copy connection string from project settings
 
 ## 📁 Project Structure
 
@@ -115,22 +142,18 @@ npm start                    # Start production server
 
 ### Database Configuration
 
-The application supports multiple database backends:
+The application uses **PostgreSQL** as its database backend:
 
-#### SQL.js (Browser SQLite)
-- No setup required
-- Data stored in browser localStorage
-- Perfect for demo/testing
-
-#### PostgreSQL
+#### PostgreSQL Connection
 ```bash
 DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
-#### Supabase
+#### Supabase Connection
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
+DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:6543/postgres
 ```
 
 ### File Storage
@@ -212,11 +235,9 @@ The backend serves the frontend in production from `dist/frontend/`.
 ## 🔒 Security
 
 - Database config validation
-- JWT-based authentication (planned)
 - File upload restrictions (25MB, specific MIME types)
 - SQL injection protection (parameterized queries)
 - CORS configuration
-- Helmet.js security headers (planned)
 
 ## 📈 Current Status
 
@@ -225,7 +246,7 @@ The backend serves the frontend in production from `dist/frontend/`.
 - [x] Monorepo structure with npm workspaces
 - [x] Backend API with modular routes
 - [x] Frontend with React + Vite
-- [x] Multi-database support (SQL.js, PostgreSQL, Supabase)
+- [x] PostgreSQL/Supabase database support
 - [x] Session-based multi-tenant architecture
 - [x] File upload and storage management
 - [x] Job CRUD operations
@@ -234,10 +255,7 @@ The backend serves the frontend in production from `dist/frontend/`.
 
 ### 🚧 In Progress
 
-- [ ] Authentication and authorization
-- [ ] User management
 - [ ] Advanced search and filtering
-- [ ] Email notifications
 
 ### 📋 Planned
 
@@ -245,7 +263,6 @@ The backend serves the frontend in production from `dist/frontend/`.
 - [ ] AI-powered job matching
 - [ ] Interview scheduler
 - [ ] Salary negotiation tracker
-- [ ] LinkedIn integration
 
 ## 🤝 Contributing
 

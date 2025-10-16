@@ -1,5 +1,4 @@
-import { DatabaseConfig } from './sqlite-service'
-import { SQLiteService } from './sqlite-service'
+import { DatabaseConfig } from './postgresql-service'
 import { PostgreSQLService } from './postgresql-service'
 import { supabaseStorage } from './supabase-client.js'
 import { jobRecordToJob, jobToJobRecord, partialJobToJobRecord } from './type-mappers.js'
@@ -25,15 +24,13 @@ interface Job {
 }
 
 export class DatabaseManager {
-  private currentService: SQLiteService | PostgreSQLService | null = null
+  private currentService: PostgreSQLService | null = null
   private currentConfig: DatabaseConfig | null = null
 
   async setDatabaseConfig(config: DatabaseConfig): Promise<void> {
     // Disconnect current service if exists
     if (this.currentService) {
-      if (this.currentService instanceof PostgreSQLService) {
-        await this.currentService.disconnect()
-      }
+      await this.currentService.disconnect()
     }
 
     this.currentConfig = config
@@ -60,11 +57,8 @@ export class DatabaseManager {
       } else {
         await this.currentService.connect(config)
       }
-    } else if (databaseType === 'sqlite') {
-      this.currentService = new SQLiteService()
-      await this.currentService.initialize()
     } else {
-      throw new Error(`Unsupported database type: ${databaseType}`)
+      throw new Error(`Unsupported database type: ${databaseType}. Only PostgreSQL is supported.`)
     }
   }
 
@@ -89,13 +83,10 @@ export class DatabaseManager {
         const result = await pgService.testConnection(config)
         await pgService.disconnect()
         return result
-      } else if (databaseType === 'sqlite') {
-        const sqliteService = new SQLiteService()
-        return await sqliteService.testConnection(config)
       } else {
         return {
           connected: false,
-          error: `Unsupported database type: ${databaseType}`
+          error: `Unsupported database type: ${databaseType}. Only PostgreSQL is supported.`
         }
       }
     } catch (error: any) {
@@ -141,16 +132,8 @@ export class DatabaseManager {
     }
 
     const recordUpdates = partialJobToJobRecord(updates)
-
-    if (this.currentService instanceof PostgreSQLService) {
-      const updated = await this.currentService.updateJob(id, recordUpdates)
-      return updated ? jobRecordToJob(updated) : updates as Job
-    } else {
-      // SQLite expects number ID
-      const numericId = parseInt(id)
-      const updated = await this.currentService.updateJob(numericId, recordUpdates)
-      return updated ? jobRecordToJob(updated) : updates as Job
-    }
+    const updated = await this.currentService.updateJob(id, recordUpdates)
+    return updated ? jobRecordToJob(updated) : updates as Job
   }
 
   async deleteJob(id: string | number): Promise<boolean> {
@@ -175,11 +158,7 @@ export class DatabaseManager {
       }
 
       // Delete job from database (this will cascade delete job_files due to foreign key)
-      if (this.currentService instanceof PostgreSQLService) {
-        await this.currentService.deleteJob(id.toString())
-      } else {
-        await this.currentService.deleteJob(numericId)
-      }
+      await this.currentService.deleteJob(id.toString())
 
       return true
     } catch (error) {
@@ -201,24 +180,14 @@ export class DatabaseManager {
     if (!this.currentService) {
       throw new Error('No database service configured')
     }
-
-    if (this.currentService instanceof PostgreSQLService) {
-      return await this.currentService.addJobFile(fileData)
-    } else {
-      return await this.currentService.addJobFile(fileData)
-    }
+    return await this.currentService.addJobFile(fileData)
   }
 
   async getJobFile(fileId: number): Promise<any> {
     if (!this.currentService) {
       throw new Error('No database service configured')
     }
-
-    if (this.currentService instanceof PostgreSQLService) {
-      return await this.currentService.getJobFile(fileId)
-    } else {
-      return await this.currentService.getJobFile(fileId)
-    }
+    return await this.currentService.getJobFile(fileId)
   }
 
   async deleteJobFile(fileId: number): Promise<boolean> {
@@ -245,11 +214,7 @@ export class DatabaseManager {
       }
 
       // Delete from database
-      if (this.currentService instanceof PostgreSQLService) {
-        return await this.currentService.deleteJobFile(fileId)
-      } else {
-        return await this.currentService.deleteJobFile(fileId)
-      }
+      return await this.currentService.deleteJobFile(fileId)
     } catch (error) {
       console.error('Failed to delete job file:', error)
       throw error
@@ -260,12 +225,7 @@ export class DatabaseManager {
     if (!this.currentService) {
       throw new Error('No database service configured')
     }
-
-    if (this.currentService instanceof PostgreSQLService) {
-      return await this.currentService.getJobFiles(jobId)
-    } else {
-      return await this.currentService.getJobFiles(jobId)
-    }
+    return await this.currentService.getJobFiles(jobId)
   }
 
   getCurrentConfig(): DatabaseConfig | null {
@@ -333,7 +293,7 @@ export class DatabaseManager {
   }
 
   async disconnect(): Promise<void> {
-    if (this.currentService && this.currentService instanceof PostgreSQLService) {
+    if (this.currentService) {
       await this.currentService.disconnect()
     }
     this.currentService = null

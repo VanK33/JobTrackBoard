@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from 'express';
 import { Logger } from '../utils/logger.js';
-import { DatabaseConfig } from '../database/sqlite-service.js';
+import { DatabaseConfig } from '../database/postgresql-service.js';
 import { ConnectionPoolManager } from '../database/connection-pool-manager.js';
 
 const router = Router();
@@ -16,6 +16,14 @@ router.post('/api/database/test', async (req: Request, res: Response) => {
 
     if (!config.type) {
       return res.status(400).json({ error: 'Database type is required' });
+    }
+
+    // Reject SQLite configurations
+    if (config.type === 'sqlite') {
+      return res.status(400).json({
+        connected: false,
+        error: 'Unsupported database type: sqlite. SQLite is no longer supported. Please use PostgreSQL or Supabase. See README for setup instructions.'
+      });
     }
 
     // Test connection using connection pool manager
@@ -51,6 +59,14 @@ router.post('/api/database/initialize', async (req: Request, res: Response) => {
 
     if (!config) {
       return res.status(400).json({ error: 'Database configuration required' });
+    }
+
+    // Reject SQLite configurations
+    if (config.type === 'sqlite') {
+      return res.status(400).json({
+        success: false,
+        error: 'Unsupported database type: sqlite. SQLite is no longer supported. Please use PostgreSQL or Supabase. See README for setup instructions.'
+      });
     }
 
     // Get connection and initialize

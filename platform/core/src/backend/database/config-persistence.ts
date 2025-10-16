@@ -5,7 +5,7 @@
 
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { DatabaseConfig } from './sqlite-service.js';
+import { DatabaseConfig } from './postgresql-service.js';
 import { Logger } from '../utils/logger.js';
 
 export class ConfigPersistenceService {
@@ -40,7 +40,7 @@ export class ConfigPersistenceService {
   static loadConfig(): DatabaseConfig | null {
     try {
       if (!existsSync(this.CONFIG_FILE)) {
-        this.logger.info('No saved configuration found, using default SQLite');
+        this.logger.info('No saved configuration found');
         return null;
       }
 
@@ -64,12 +64,12 @@ export class ConfigPersistenceService {
   }
 
   /**
-   * Get default SQLite configuration
+   * Get default PostgreSQL configuration
    */
   static getDefaultConfig(): DatabaseConfig {
     return {
-      type: 'sqlite',
-      host: '',
+      type: 'postgresql',
+      host: 'localhost',
       port: 5432,
       database: '',
       username: '',

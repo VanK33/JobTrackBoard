@@ -353,6 +353,7 @@ export class SQLiteService {
         // Load related data
         job.files = await this.getJobFiles(job.id!);
         job.statusHistory = await this.getJobStatusHistory(job.id!);
+        (job as any).progress = this.getJobProgress(job.id!);
 
         jobs.push(job);
       }
@@ -488,7 +489,7 @@ export class SQLiteService {
     jobId: number,
     fromStatus: string,
     toStatus: string,
-    minIntervalMinutes: number = 5 // Default: don't record duplicate changes within 5 minutes
+    minIntervalMinutes: number = 5
   ): void {
     if (!this.db) return;
 
@@ -859,17 +860,131 @@ export class SQLiteService {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      const stmt = this.db.prepare("DELETE FROM job_status_history WHERE id = ?");
-      stmt.run([historyId]);
-      const changes = this.db.getRowsModified();
-      stmt.free();
+      // First, get the job_id and status before deleting
+      const getStmt = this.db.prepare("SELECT job_id, status FROM job_status_history WHERE id = ?");
+      getStmt.run([historyId]);
 
-      this.saveDatabase();
+      let jobId: number | null = null;
+      let deletedStatus: string | null = null;
+
+      if (getStmt.step()) {
+        const row = getStmt.getAsObject();
+        jobId = row.job_id as number;
+        deletedStatus = row.status as string;
+      }
+      getStmt.free();
+
+      if (!jobId) {
+        return false; // Record not found
+      }
+
+      // Delete the history record
+      const deleteStmt = this.db.prepare("DELETE FROM job_status_history WHERE id = ?");
+      deleteStmt.run([historyId]);
+      const changes = this.db.getRowsModified();
+      deleteStmt.free();
+
+      if (changes > 0) {
+        // Rebuild stage timestamps based on remaining history
+        this.rebuildStageTimestamps(jobId);
+        this.saveDatabase();
+      }
+
       return changes > 0;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('Failed to delete status history', { error: message });
       return false;
+    }
+  }
+
+  // Rebuild stage timestamps from scratch based on status history
+  private rebuildStageTimestamps(jobId: number): void {
+    if (!this.db) return;
+
+    try {
+      // Get all status history for this job, ordered by time
+      const historyStmt = this.db.prepare(`
+        SELECT status, changed_at
+        FROM job_status_history
+        WHERE job_id = ?
+        ORDER BY changed_at ASC
+      `);
+
+      historyStmt.run([jobId]);
+
+      const timestamps: Record<string, string | null> = {
+        applied_at: null,
+        screening_at: null,
+        interview_at: null,
+        offered_at: null,
+        rejected_at: null,
+        rejected_from: null
+      };
+
+      // Track the last status before rejection
+      let lastStatusBeforeRejection: string | null = null;
+      let previousStatus: string | null = null;
+
+      while (historyStmt.step()) {
+        const row = historyStmt.getAsObject();
+        const status = row.status as string;
+        const changedAt = row.changed_at as string;
+
+        // Map status to timestamp field (only set if not already set - first occurrence)
+        if (status === 'applied' && !timestamps.applied_at) {
+          timestamps.applied_at = changedAt;
+        } else if (status === 'screening' && !timestamps.screening_at) {
+          timestamps.screening_at = changedAt;
+        } else if (status === 'interview' && !timestamps.interview_at) {
+          timestamps.interview_at = changedAt;
+        } else if (status === 'offered' && !timestamps.offered_at) {
+          timestamps.offered_at = changedAt;
+          // Clear rejection when offered
+          timestamps.rejected_at = null;
+          timestamps.rejected_from = null;
+        } else if (status === 'rejected') {
+          timestamps.rejected_at = changedAt;
+          timestamps.rejected_from = previousStatus;
+          // Clear offered when rejected
+          timestamps.offered_at = null;
+        }
+
+        previousStatus = status;
+      }
+      historyStmt.free();
+
+      // Delete existing timestamps
+      const deleteTimestampsStmt = this.db.prepare("DELETE FROM job_stage_timestamps WHERE job_id = ?");
+      deleteTimestampsStmt.run([jobId]);
+      deleteTimestampsStmt.free();
+
+      // Insert rebuilt timestamps (only if there's any data)
+      if (Object.values(timestamps).some(v => v !== null)) {
+        const insertStmt = this.db.prepare(`
+          INSERT INTO job_stage_timestamps (
+            job_id, applied_at, screening_at, interview_at,
+            offered_at, rejected_at, rejected_from, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        insertStmt.run([
+          jobId,
+          timestamps.applied_at,
+          timestamps.screening_at,
+          timestamps.interview_at,
+          timestamps.offered_at,
+          timestamps.rejected_at,
+          timestamps.rejected_from,
+          new Date().toISOString()
+        ]);
+        insertStmt.free();
+      }
+
+      this.logger.info('Stage timestamps rebuilt', { jobId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to rebuild stage timestamps', { error: message, jobId });
     }
   }
 
@@ -978,6 +1093,7 @@ export class SQLiteService {
       this.logger.error('Failed to update stage timestamp', { error: message });
     }
   }
+
 
   getJobProgress(jobId: number): Array<{stage: string, at: string}> {
     const timestamps = this.getStageTimestamps(jobId);

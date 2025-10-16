@@ -136,6 +136,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   const [thumbnailCache, setThumbnailCache] = useState<{[fileId: string]: string}>({})
   const [loadingThumbnails, setLoadingThumbnails] = useState<Set<string>>(new Set())
   const [isMobileDevice, setIsMobileDevice] = useState(false)
+  const [hoveredHistoryId, setHoveredHistoryId] = useState<string | null>(null)
 
   const previewTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const hideTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
@@ -1096,6 +1097,25 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       await handleRemoveDocument(fileId)
     } else if (selectedJob) {
       await handleRemoveDocument(fileId)
+    }
+  }
+
+  // Delete status history entry
+  const handleDeleteStatusHistory = async (jobId: string, historyId: number) => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/api/jobs/${jobId}/status-history/${historyId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        // Refresh the job data to get updated status history
+        await refreshJobData(jobId)
+        console.log('Status history entry deleted successfully')
+      } else {
+        console.error('Failed to delete status history entry:', response.statusText)
+      }
+    } catch (error) {
+      console.error('Error deleting status history:', error)
     }
   }
 
@@ -3607,7 +3627,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                   }}>
                     {selectedJob.statusHistory
                       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                      .map((historyEntry, index) => {
+                      .map((historyEntry, index, sortedArray) => {
                         const isRejection = historyEntry.status === 'rejected'
                         const getStatusText = (entry: any) => {
                           if (entry.status === 'rejected') {
@@ -3622,9 +3642,16 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
                         const hasTooltipContent = historyEntry.note || historyEntry.operator
 
+                        const historyKey = `${historyEntry.id || historyEntry.status}-${historyEntry.date}`
+                        const isHovered = hoveredHistoryId === historyKey
+
+                        // Check if this is the first (oldest) entry - prevent deletion
+                        const isFirstEntry = index === sortedArray.length - 1
+                        const canDelete = !isFirstEntry && historyEntry.id
+
                         return (
                           <div
-                            key={`${historyEntry.status}-${historyEntry.date}`}
+                            key={historyKey}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -3641,11 +3668,50 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                             }
                             onMouseEnter={(e) => {
                               e.currentTarget.style.backgroundColor = isRejection ? '#fef2f2' : '#f9fafb'
+                              setHoveredHistoryId(historyKey)
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.backgroundColor = 'transparent'
+                              setHoveredHistoryId(null)
                             }}
                           >
+                            {/* Delete button - on the left side, before date */}
+                            {isHovered && canDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteStatusHistory(selectedJob._id, historyEntry.id)
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  left: '8px',
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  borderRadius: '4px',
+                                  padding: '4px 8px',
+                                  cursor: 'pointer',
+                                  fontSize: '11px',
+                                  color: '#dc2626',
+                                  fontWeight: '500',
+                                  transition: 'all 0.15s ease',
+                                  opacity: 0.7,
+                                  zIndex: 10
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.opacity = '1'
+                                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.opacity = '0.7'
+                                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+                                }}
+                              >
+                                ✕
+                              </button>
+                            )}
+
                             <div style={{
                               width: '140px',
                               textAlign: 'right',
@@ -3668,7 +3734,8 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
 
                             <div style={{
                               flex: 1,
-                              paddingLeft: '8px'
+                              paddingLeft: '8px',
+                              position: 'relative'
                             }}>
                               <span style={{
                                 fontSize: '13px',

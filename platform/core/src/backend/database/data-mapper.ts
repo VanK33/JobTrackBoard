@@ -39,6 +39,7 @@ export interface FrontendJobFile {
 
 
 export interface FrontendStatusHistory {
+  id?: number
   status: string
   date: string
   operator?: string
@@ -162,6 +163,7 @@ export class DataMapper {
    */
   static backendStatusHistoryToFrontend(backendHistory: StatusHistoryRecord): FrontendStatusHistory {
     return {
+      id: backendHistory.id,
       status: backendHistory.status,
       date: backendHistory.changedAt,
       operator: backendHistory.operator,

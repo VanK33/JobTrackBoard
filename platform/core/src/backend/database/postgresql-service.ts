@@ -139,6 +139,7 @@ export class PostgreSQLService {
         )
       `)
 
+
       console.log('✅ PostgreSQL tables created successfully')
     } finally {
       client.release()
@@ -194,6 +195,7 @@ export class PostgreSQLService {
       for (const job of jobs) {
         job.files = await this.getJobFiles(job.id)
         job.statusHistory = await this.getStatusHistory(job.id)
+        job.progress = await this.getJobProgress(job.id)
       }
 
       return jobs
@@ -603,12 +605,124 @@ export class PostgreSQLService {
 
     const client = await this.pool.connect()
     try {
+      // First, get the job_id before deleting
+      const getResult = await client.query('SELECT job_id FROM job_status_history WHERE id = $1', [historyId])
+
+      if (getResult.rows.length === 0) {
+        return false // Record not found
+      }
+
+      const jobId = getResult.rows[0].job_id
+
+      // Delete the history record
       const result = await client.query('DELETE FROM job_status_history WHERE id = $1', [historyId])
-      return (result.rowCount !== null && result.rowCount > 0)
+      const deleted = (result.rowCount !== null && result.rowCount > 0)
+
+      if (deleted) {
+        // Rebuild stage timestamps based on remaining history
+        await this.rebuildStageTimestamps(jobId)
+
+        // Update job's current status to match the most recent status history entry
+        const latestHistoryResult = await client.query(`
+          SELECT status
+          FROM job_status_history
+          WHERE job_id = $1
+          ORDER BY changed_at DESC
+          LIMIT 1
+        `, [jobId])
+
+        if (latestHistoryResult.rows.length > 0) {
+          const latestStatus = latestHistoryResult.rows[0].status
+          await client.query('UPDATE jobs SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [latestStatus, jobId])
+          console.log(`Job ${jobId} status updated to ${latestStatus} after deleting history entry`)
+        }
+      }
+
+      return deleted
     } finally {
       client.release()
     }
   }
+
+  // Rebuild stage timestamps from scratch based on status history
+  private async rebuildStageTimestamps(jobId: number): Promise<void> {
+    if (!this.pool) return
+
+    const client = await this.pool.connect()
+    try {
+      // Get all status history for this job, ordered by time
+      const historyResult = await client.query(`
+        SELECT status, changed_at
+        FROM job_status_history
+        WHERE job_id = $1
+        ORDER BY changed_at ASC
+      `, [jobId])
+
+      const timestamps: Record<string, string | null> = {
+        applied_at: null,
+        screening_at: null,
+        interview_at: null,
+        offered_at: null,
+        rejected_at: null,
+        rejected_from: null
+      }
+
+      let previousStatus: string | null = null
+
+      for (const row of historyResult.rows) {
+        const status = row.status
+        const changedAt = row.changed_at
+
+        // Map status to timestamp field (only set if not already set - first occurrence)
+        if (status === 'applied' && !timestamps.applied_at) {
+          timestamps.applied_at = changedAt
+        } else if (status === 'screening' && !timestamps.screening_at) {
+          timestamps.screening_at = changedAt
+        } else if (status === 'interview' && !timestamps.interview_at) {
+          timestamps.interview_at = changedAt
+        } else if (status === 'offered' && !timestamps.offered_at) {
+          timestamps.offered_at = changedAt
+          // Clear rejection when offered
+          timestamps.rejected_at = null
+          timestamps.rejected_from = null
+        } else if (status === 'rejected') {
+          timestamps.rejected_at = changedAt
+          timestamps.rejected_from = previousStatus
+          // Clear offered when rejected
+          timestamps.offered_at = null
+        }
+
+        previousStatus = status
+      }
+
+      // Delete existing timestamps
+      await client.query('DELETE FROM job_stage_timestamps WHERE job_id = $1', [jobId])
+
+      // Insert rebuilt timestamps (only if there's any data)
+      if (Object.values(timestamps).some(v => v !== null)) {
+        await client.query(`
+          INSERT INTO job_stage_timestamps (
+            job_id, applied_at, screening_at, interview_at,
+            offered_at, rejected_at, rejected_from, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [
+          jobId,
+          timestamps.applied_at,
+          timestamps.screening_at,
+          timestamps.interview_at,
+          timestamps.offered_at,
+          timestamps.rejected_at,
+          timestamps.rejected_from,
+          new Date().toISOString()
+        ])
+      }
+
+      console.log('Stage timestamps rebuilt for job', jobId)
+    } finally {
+      client.release()
+    }
+  }
+
 
   // Stage Timestamps operations
   async getStageTimestamps(jobId: number): Promise<any> {
@@ -721,6 +835,7 @@ export class PostgreSQLService {
       client.release()
     }
   }
+
 
   async getJobProgress(jobId: number): Promise<Array<{stage: string, at: string}>> {
     const timestamps = await this.getStageTimestamps(jobId)

@@ -235,11 +235,9 @@ The backend serves the frontend in production from `dist/frontend/`.
 ## 🔒 Security
 
 - Database config validation
-- JWT-based authentication (planned)
 - File upload restrictions (25MB, specific MIME types)
 - SQL injection protection (parameterized queries)
 - CORS configuration
-- Helmet.js security headers (planned)
 
 ## 📈 Current Status
 
@@ -257,10 +255,7 @@ The backend serves the frontend in production from `dist/frontend/`.
 
 ### 🚧 In Progress
 
-- [ ] Authentication and authorization
-- [ ] User management
 - [ ] Advanced search and filtering
-- [ ] Email notifications
 
 ### 📋 Planned
 
@@ -268,7 +263,6 @@ The backend serves the frontend in production from `dist/frontend/`.
 - [ ] AI-powered job matching
 - [ ] Interview scheduler
 - [ ] Salary negotiation tracker
-- [ ] LinkedIn integration
 
 ## 🤝 Contributing
 

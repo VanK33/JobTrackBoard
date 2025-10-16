@@ -1,12 +1,13 @@
 /**
  * TutorialModal Component
  * Modal dialog for displaying 5-step tutorial carousel
- * Spec: 013-tutorial-popup-3
+ * Spec: 013-tutorial-popup-3, 022-tutorial-embedding-tutorial
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect } from 'react'
 import { tutorialSteps } from '../utils/tutorialData'
 import { useTutorialState } from '../hooks/useTutorialState'
+import VideoPlayer from './VideoPlayer'
 
 interface TutorialModalProps {
   /**
@@ -26,33 +27,16 @@ interface TutorialModalProps {
 }
 
 const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(0)
   const { markAsSeen } = useTutorialState()
 
-  const currentStep = tutorialSteps[currentStepIndex]
-  const isFirstStep = currentStepIndex === 0
-  const isLastStep = currentStepIndex === 4
-
-  const goToNextStep = () => {
-    if (currentStepIndex < 4) {
-      setCurrentStepIndex(currentStepIndex + 1)
-    }
-  }
-
-  const goToPreviousStep = () => {
-    if (currentStepIndex > 0) {
-      setCurrentStepIndex(currentStepIndex - 1)
-    }
-  }
+  const currentStep = tutorialSteps[0]
 
   const handleFinish = () => {
     markAsSeen()
-    setCurrentStepIndex(0) // Reset for next open (FR-014)
     onClose()
   }
 
   const handleClose = () => {
-    setCurrentStepIndex(0) // Reset on close (FR-014)
     onClose()
   }
 
@@ -106,8 +90,8 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
           backgroundColor: 'white',
           borderRadius: '8px',
           padding: '24px',
-          maxWidth: '700px',
-          width: '90%',
+          maxWidth: '1200px',
+          width: '95%',
           maxHeight: '95vh',
           overflowY: 'auto',
           position: 'relative',
@@ -148,46 +132,38 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
           Tutorial
         </h2>
 
-        {/* Tutorial carousel content */}
+        {/* Tutorial content */}
         <div
           style={{
             marginTop: '16px'
           }}
         >
-          {/* Progress Indicator */}
+          {/* Video or Image */}
           <div
             style={{
-              textAlign: 'center',
-              marginBottom: '16px',
-              color: '#6b7280',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            Step {currentStepIndex + 1} of 5
-          </div>
-
-          {/* Image (500x500px, centered) */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
+              width: '100%',
               marginBottom: '16px'
             }}
           >
-            <img
-              src={currentStep.imageSrc}
-              alt={`Step ${currentStep.stepNumber}: ${currentStep.title}`}
-              style={{
-                width: '500px',
-                height: '500px',
-                display: 'block',
-                border: '1px solid #e5e7eb',
-                borderRadius: '4px'
-              }}
-            />
+            {currentStep.videoUrl ? (
+              <VideoPlayer
+                videoUrl={currentStep.videoUrl}
+                ariaLabel={`Step ${currentStep.stepNumber}: ${currentStep.title}`}
+              />
+            ) : (
+              <img
+                src={currentStep.imageSrc}
+                alt={`Step ${currentStep.stepNumber}: ${currentStep.title}`}
+                style={{
+                  width: '500px',
+                  height: '500px',
+                  display: 'block',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '4px',
+                  margin: '0 auto'
+                }}
+              />
+            )}
           </div>
 
           {/* Description Text */}
@@ -203,80 +179,33 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
             {currentStep.description}
           </p>
 
-          {/* Navigation Buttons */}
+          {/* Finish Button */}
           <div
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
-              gap: '16px',
-              alignItems: 'center'
+              justifyContent: 'center',
+              gap: '16px'
             }}
           >
-            {!isFirstStep && (
-              <button
-                onClick={goToPreviousStep}
-                aria-label="Go to previous step"
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#f3f4f6',
-                  color: '#374151',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e5e7eb'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-              >
-                Previous
-              </button>
-            )}
-            {isFirstStep && <div style={{ flex: 1 }}></div>}
-            {!isLastStep ? (
-              <button
-                onClick={goToNextStep}
-                aria-label="Go to next step"
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#3b82f6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  marginLeft: 'auto',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                onClick={handleFinish}
-                aria-label="Finish tutorial"
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  marginLeft: 'auto',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
-              >
-                Finish
-              </button>
-            )}
+            <button
+              onClick={handleFinish}
+              aria-label="Close tutorial"
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
+            >
+              Got it
+            </button>
           </div>
         </div>
       </div>

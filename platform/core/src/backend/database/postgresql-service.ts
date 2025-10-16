@@ -1,5 +1,39 @@
 import { Pool, PoolClient } from 'pg'
-import { DatabaseConfig, JobRecord } from './sqlite-service'
+
+// Database configuration interface
+export interface DatabaseConfig {
+  type: 'postgresql' | 'mysql' | 'mongodb'
+  host?: string
+  port?: number
+  database?: string
+  username?: string
+  password?: string
+  ssl?: boolean
+  connectionString?: string
+  storage?: any
+}
+
+// Job record interface
+export interface JobRecord {
+  id?: number
+  title: string
+  company: string
+  location: string
+  status: string
+  url?: string
+  notes?: string
+  description?: string
+  requirements?: string
+  responsibilities?: string
+  qualifications?: string
+  appliedAt?: string
+  rejectedAt?: string
+  createdAt?: string
+  updatedAt?: string
+  files?: any[]
+  statusHistory?: any[]
+  progress?: any[]
+}
 
 // Use JobRecord as the standard backend interface
 type Job = JobRecord

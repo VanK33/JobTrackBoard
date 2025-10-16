@@ -34,7 +34,6 @@
     "react-markdown": "^10.1.0",
     "redis": "^4.6.0",
     "remark-gfm": "^4.0.1",
-    "sql.js": "^1.13.0",
     "turndown": "^7.2.1",
     "winston": "^3.10.0",
     "zod": "^3.22.0"

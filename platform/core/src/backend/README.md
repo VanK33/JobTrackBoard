@@ -14,7 +14,6 @@ backend/
 │   ├── jobs.ts            # Job CRUD operations
 │   └── stats.ts           # Statistics endpoints
 ├── database/              # Database services
-│   ├── sqlite-service.ts
 │   ├── postgresql-service.ts
 │   ├── supabase-client.ts
 │   ├── connection-pool-manager.ts
@@ -76,22 +75,19 @@ Each file exports an Express router for a specific domain:
 
 ## Database Layer (`database/`)
 
-### Multi-Database Support
+### PostgreSQL Database Support
 
-Three database implementations:
+Two PostgreSQL implementations:
 
-1. **SQL.js** (`sqlite-service.ts`)
-   - Browser-based SQLite
-   - No server required
-   - Data in localStorage
-
-2. **PostgreSQL** (`postgresql-service.ts`)
+1. **PostgreSQL** (`postgresql-service.ts`)
    - Direct PostgreSQL connection
    - Connection pooling via `pg` library
+   - Full CRUD operations support
 
-3. **Supabase** (`supabase-client.ts`)
+2. **Supabase** (`supabase-client.ts`)
    - PostgreSQL via Supabase
    - Built-in storage integration
+   - Cloud-hosted PostgreSQL
 
 ### Connection Management
 

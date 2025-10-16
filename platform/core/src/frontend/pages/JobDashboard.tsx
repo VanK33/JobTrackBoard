@@ -60,6 +60,7 @@ interface Module {
   name: string
   displayName: string
   isInstalled: boolean
+  disabled?: boolean  // Optional: disable module button
 }
 
 interface PreviewState {
@@ -156,14 +157,10 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
       id: 'jd-resume-match',
       name: 'JD-Resume Match',
       displayName: 'JD-Resume Match',
-      isInstalled: false
-    },
-    {
-      id: 'ocr-scanner',
-      name: 'OCR Scanner',
-      displayName: 'OCR Scanner',
-      isInstalled: false
+      isInstalled: false,
+      disabled: true  // Temporarily disabled
     }
+    // OCR Scanner temporarily removed
   ]
 
   const statusOrder = ['applied', 'screening', 'interview', 'offered', 'rejected']
@@ -1783,20 +1780,21 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                 marginBottom: '8px',
                 borderRadius: '4px',
                 backgroundColor: module.isInstalled ? '#000000' : '#ffffff',
-                color: module.isInstalled ? '#ffffff' : '#666666',
-                cursor: 'pointer',
+                color: module.disabled ? '#cccccc' : (module.isInstalled ? '#ffffff' : '#666666'),
+                cursor: module.disabled ? 'not-allowed' : 'pointer',
                 fontSize: '14px',
                 fontWeight: module.isInstalled ? '500' : '400',
                 border: module.isInstalled ? 'none' : '1px solid #e0e0e0',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                opacity: module.disabled ? 0.5 : 1
               }}
               onMouseEnter={(e) => {
-                if (!module.isInstalled) {
+                if (!module.isInstalled && !module.disabled) {
                   e.currentTarget.style.backgroundColor = '#f8f9fa'
                 }
               }}
               onMouseLeave={(e) => {
-                if (!module.isInstalled) {
+                if (!module.isInstalled && !module.disabled) {
                   e.currentTarget.style.backgroundColor = '#ffffff'
                 }
               }}

@@ -110,6 +110,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   const [hoveredDocument, setHoveredDocument] = useState<string | null>(null)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
   const [newJobForm, setNewJobForm] = useState<Job | null>(null)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [fileUploadState, setFileUploadState] = useState<FileUploadState>({
     isDragOver: false,
@@ -525,6 +526,40 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
     }, 500)
   }
 
+  // Dirty State Detection (FR-006)
+  const hasUnsavedData = (): boolean => {
+    if (!isCreatingNew) return false;
+
+    // FR-006: At least ONE field has non-empty value
+    return !!(
+      newJobForm?.title?.trim() ||
+      newJobForm?.company?.trim() ||
+      newJobForm?.location?.trim() ||
+      newJobForm?.description?.trim() ||
+      (newJobForm?.status && newJobForm.status !== 'draft')
+    );
+  };
+
+  // Close Attempt Handler (FR-005, FR-007)
+  const handleCloseAttempt = () => {
+    if (hasUnsavedData()) {
+      setShowCloseConfirm(true); // FR-007: Show confirmation
+    } else {
+      // FR-005: Close immediately if no unsaved data
+      // Clean up blob URLs before clearing form
+      newJobForm?.files?.forEach(file => {
+        if (file.url.startsWith('blob:')) {
+          URL.revokeObjectURL(file.url)
+        }
+      })
+
+      setIsCreatingNew(false);
+      setNewJobForm(null);
+      setSelectedJob(null);
+      setValidationErrors([]);
+    }
+  };
+
   // New Application Handlers
   const handleNewApplication = () => {
     const newJob: Job = {
@@ -677,17 +712,8 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
   }
 
   const handleCancelNewApplication = () => {
-    // Clean up blob URLs before clearing form
-    newJobForm?.files?.forEach(file => {
-      if (file.url.startsWith('blob:')) {
-        URL.revokeObjectURL(file.url)
-      }
-    })
-
-    setIsCreatingNew(false)
-    setNewJobForm(null)
-    setSelectedJob(null)
-    setValidationErrors([])
+    // Use handleCloseAttempt to check for unsaved data (FR-005, FR-007)
+    handleCloseAttempt()
   }
 
   const handleNewJobFormChange = (field: keyof Job, value: any) => {
@@ -2252,7 +2278,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                     }}
                     tabIndex={0}
                   >
-                    {isCreatingNew ? 'New Application' : `${selectedJob.title} - ${selectedJob.company}`}
+                    {isCreatingNew ? 'New Application' : `${selectedJob?.title || 'Untitled'} - ${selectedJob?.company || 'Unknown'}`}
                   </h3>
                 </div>
 
@@ -2337,7 +2363,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                       </button>
 
                       <button
-                        onClick={() => setShowDeleteConfirm(selectedJob._id)}
+                        onClick={() => {
+                          if (selectedJob?._id) {
+                            setShowDeleteConfirm(selectedJob._id);
+                          }
+                        }}
                         style={{
                           padding: '6px 12px',
                           backgroundColor: '#ffffff',
@@ -2366,7 +2396,7 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
               </div>
 
               {/* Delete Confirmation Modal - Two Step */}
-              {showDeleteConfirm === selectedJob._id && (
+              {selectedJob && showDeleteConfirm === selectedJob._id && (
                 <div style={{
                   position: 'absolute',
                   top: '0',
@@ -2426,7 +2456,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                             Cancel
                           </button>
                           <button
-                            onClick={() => handleDeleteJob(selectedJob._id)}
+                            onClick={() => {
+                              if (selectedJob?._id) {
+                                handleDeleteJob(selectedJob._id);
+                              }
+                            }}
                             style={{
                               padding: '8px 16px',
                               backgroundColor: '#ff4444',
@@ -2496,7 +2530,11 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                             Cancel
                           </button>
                           <button
-                            onClick={() => handleDeleteJob(selectedJob._id)}
+                            onClick={() => {
+                              if (selectedJob?._id) {
+                                handleDeleteJob(selectedJob._id);
+                              }
+                            }}
                             disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE'}
                             style={{
                               padding: '8px 16px',
@@ -2514,6 +2552,73 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                         </div>
                       </>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Close Confirmation Dialog */}
+              {showCloseConfirm && (
+                <div style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10000
+                }}>
+                  <div style={{
+                    backgroundColor: '#ffffff',
+                    padding: '24px',
+                    borderRadius: '8px',
+                    maxWidth: '400px',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                  }}>
+                    <h3 style={{ marginTop: 0 }}>Close without saving?</h3>
+                    <p>Your changes will be lost if you close this modal.</p>
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                      <button
+                        onClick={() => setShowCloseConfirm(false)} // FR-008: Continue editing
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#f0f0f0',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Continue editing
+                      </button>
+                      <button
+                        onClick={() => { // FR-013: Discard changes
+                          // Clean up blob URLs before clearing form
+                          newJobForm?.files?.forEach(file => {
+                            if (file.url.startsWith('blob:')) {
+                              URL.revokeObjectURL(file.url)
+                            }
+                          })
+
+                          setShowCloseConfirm(false);
+                          setIsCreatingNew(false);
+                          setNewJobForm(null);
+                          setSelectedJob(null);
+                          setValidationErrors([]);
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#ff4444',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Discard changes
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3678,7 +3783,9 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  handleDeleteStatusHistory(selectedJob._id, historyEntry.id)
+                                  if (selectedJob?._id) {
+                                    handleDeleteStatusHistory(selectedJob._id, historyEntry.id)
+                                  }
                                 }}
                                 style={{
                                   position: 'absolute',
@@ -3997,7 +4104,9 @@ const JobDashboard: React.FC<JobDashboardProps> = ({ onNavigateToSettings }) => 
                               handleFormChange('status', status)
                             } else if (!isEditing && selectedJob) {
                               // Outside edit mode, apply immediately
-                              await updateJobStatus(selectedJob._id, status, `Status manually set to ${statusLabels[status as keyof typeof statusLabels]}`)
+                              if (selectedJob?._id) {
+                                await updateJobStatus(selectedJob._id, status, `Status manually set to ${statusLabels[status as keyof typeof statusLabels]}`)
+                              }
                             }
                           }}
                           onMouseEnter={(e) => {

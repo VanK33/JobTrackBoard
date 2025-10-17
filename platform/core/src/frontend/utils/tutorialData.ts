@@ -1,8 +1,8 @@
 /**
  * Tutorial Data Utility
  *
- * Provides the 5-step tutorial carousel content with placeholder images.
- * Spec: 013-tutorial-popup-3
+ * Provides the 5-step tutorial carousel content with placeholder images and optional videos.
+ * Spec: 013-tutorial-popup-3, 022-tutorial-embedding-tutorial
  */
 
 export interface TutorialStep {
@@ -10,6 +10,20 @@ export interface TutorialStep {
   title: string;
   imageSrc: string;
   description: string;
+  /**
+   * Optional video URL for tutorial step
+   *
+   * Supported formats:
+   * - YouTube: https://www.youtube.com/watch?v=VIDEO_ID or https://youtu.be/VIDEO_ID
+   * - Vimeo: https://vimeo.com/VIDEO_ID
+   * - Direct URLs: https://example.com/video.mp4 or .webm
+   *
+   * When present, video is displayed instead of image.
+   * Image serves as fallback if video fails to load.
+   *
+   * @example "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+   */
+  videoUrl?: string;
 }
 
 function generatePlaceholder(stepNumber: number): string {
@@ -25,32 +39,9 @@ function generatePlaceholder(stepNumber: number): string {
 export const tutorialSteps: TutorialStep[] = [
   {
     stepNumber: 1,
-    title: 'Welcome',
+    title: 'Tutorial',
     imageSrc: generatePlaceholder(1),
-    description: 'Welcome to the application! This tutorial will guide you through the main features.'
-  },
-  {
-    stepNumber: 2,
-    title: 'Navigation',
-    imageSrc: generatePlaceholder(2),
-    description: 'Use the menu on the left to navigate between different sections of the app.'
-  },
-  {
-    stepNumber: 3,
-    title: 'Adding Items',
-    imageSrc: generatePlaceholder(3),
-    description: 'Click the "Add" button to create new items. Fill out the form and save your changes.'
-  },
-  {
-    stepNumber: 4,
-    title: 'Searching',
-    imageSrc: generatePlaceholder(4),
-    description: 'Use the search bar at the top to quickly find items. Filter results using the dropdown menu.'
-  },
-  {
-    stepNumber: 5,
-    title: 'Get Started',
-    imageSrc: generatePlaceholder(5),
-    description: 'You\'re all set! Click "Finish" to start using the application. You can access this tutorial anytime from the bottom-right corner.'
+    description: 'Watch this video to learn how to use the application.',
+    videoUrl: 'https://www.youtube.com/watch?v=agGze8YiydQ'
   }
 ];
